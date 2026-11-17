@@ -1,7 +1,7 @@
-# MyCarBook — operazioni sul server
+# MyCarBook — server operations
 
-Procedure per rilasciare e mantenere le correzioni dell'audit 2026-11
-([AUDIT.md](AUDIT.md)). Percorsi d'esempio: adattarli al VPS.
+How to release and maintain the fixes of the November 2026 audit ([AUDIT.md](AUDIT.md)) for
+**MyCarBook V2**. Example paths: adapt them to the server.
 
 ## 1. Backend
 
@@ -10,131 +10,130 @@ cd /var/www/mycarbook/backend
 npm ci --omit=dev
 ```
 
-Nuove variabili in `backend/.env` (vedi `backend/.env.example`):
+Variables in `backend/.env` (see `backend/.env.example`):
 
-| Variabile | Valore |
+| Variable | Value |
 |---|---|
-| `IPFS_API_URL` | API Kubo del nodo (obbligatoria, non ha più un default) |
-| `IPFS_API_AUTH` | facoltativa, intestazione `Authorization` se sul nodo è attivo `API.Authorizations` |
+| `IPFS_API_URL` | the node's Kubo API (required, no default any more) |
+| `IPFS_API_AUTH` | optional, the `Authorization` header when `API.Authorizations` is on in the node |
 | `AUTH_DOMAIN` | `mycarbook.chainintegrate.it` |
 | `ALLOWED_CHAIN_IDS` | `42` |
-| `ADMIN_UP_ADDRESS` | UP owner del contratto (oggi `0x4a2605796e0d91A9667d6E30365aEEC384C48c27`) |
-| `ADMIN_SIGNER_ADDRESS` | `any` (qualunque controller della UP owner con permesso SIGN), oppure l'indirizzo di una sola chiave controller; vuoto = admin disattivato |
+| `ADMIN_UP_ADDRESS` | the contract's owner UP (today `0x4a2605796e0d91A9667d6E30365aEEC384C48c27`) |
+| `ADMIN_SIGNER_ADDRESS` | `any` (any controller of the owner UP with the SIGN permission), or the address of a single controller key; empty = admin disabled |
 | `TRUST_PROXY` | `loopback` (default) |
 
-Firma admin: con `ADMIN_SIGNER_ADDRESS=any` (scelta in produzione) basta
-la firma della UP owner da qualunque dispositivo, cioè da qualunque suo
-controller con permesso SIGN, verificata on-chain dal KeyManager. Per
-restringere a un solo dispositivo si indica l'indirizzo della sua chiave
-controller: per ricavarlo, sul sito connesso con la UP owner, in console:
+Admin signature: with `ADMIN_SIGNER_ADDRESS=any` (the production choice) the owner UP's signature
+from any device is enough, that is from any of its controllers with the SIGN permission, checked
+on-chain by the KeyManager. To restrict it to one device, give the address of its controller key; to
+find it, on the site connected with the owner UP, in the console:
 
 ```js
 const s = await new ethers.BrowserProvider(window.lukso).getSigner();
-const msg = "MyCarBook: verifica chiave admin";
+const msg = "MyCarBook: admin key check";
 console.log(ethers.verifyMessage(msg, await s.signMessage(msg)));
 ```
 
-Quando l'ownership del contratto verrà spostata: aggiornare
-`ADMIN_UP_ADDRESS` e riavviare.
+When the contract's ownership moves: update `ADMIN_UP_ADDRESS` and restart.
 
 ```bash
-pm2 restart mycarbook-backend   # nome del processo PM2 in uso
+sudo pm2 restart mycarbook-backend
 curl -s https://mycarbook.chainintegrate.it/api/health
 ```
 
-Verifica del rate limit per IP: nei log PM2 non devono comparire avvisi
-`ERR_ERL_UNEXPECTED_X_FORWARDED_FOR`.
+Per-IP rate limit check: the PM2 logs must not show `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` warnings.
 
-## 2. Frontend e Nginx
+## 2. Frontend and Nginx
 
-1. Copiare `frontend/` (incluse `js/`, `css/`, `vendor/`, `fonts/`).
+1. Copy `frontend/` (with `js/`, `css/`, `vendor/`, `fonts/`). In production the repository is
+   cloned on the server and Nginx serves `frontend/` directly: `git pull` is the release.
 2. `sudo cp deploy/nginx/security-headers.conf /etc/nginx/snippets/mycarbook-security-headers.conf`
-3. Confrontare il vhost con `deploy/nginx/mycarbook.conf`: `include` dello
-   snippet nel `server` e in ogni `location` con `add_header`; nella
-   `location /api/` `proxy_set_header X-Forwarded-For $remote_addr;`;
-   `try_files … =404`.
-4. **Fase 1**: nello snippet rinominare `Content-Security-Policy` in
-   `Content-Security-Policy-Report-Only`, `sudo nginx -t && sudo systemctl
-   reload nginx`, usare l'app con l'estensione UP (connessione, mint con
-   foto, intervento con documento, cambio lingua, pannello admin) e
-   controllare che la console (F12) non mostri violazioni.
-5. **Fase 2**: ripristinare `Content-Security-Policy`, ricaricare Nginx.
+3. Compare the vhost with `deploy/nginx/mycarbook.conf`: the snippet's `include` in the `server`
+   block and in every `location` with its own `add_header`; in `location /api/`
+   `proxy_set_header X-Forwarded-For $remote_addr;`. In production the vhost is one block of a
+   file shared with other sites: change only that block.
+4. **Phase 1**: in the snippet rename `Content-Security-Policy` to
+   `Content-Security-Policy-Report-Only`, `sudo nginx -t && sudo systemctl reload nginx`, use the app
+   with the UP extension (connection, mint with photo, entry with document, language switch, admin
+   page) and check that the console (F12) shows no violations.
+5. **Phase 2**: restore `Content-Security-Policy`, reload Nginx.
 
-Verifica: `curl -sI https://mycarbook.chainintegrate.it/ | grep -i -E
-'content-security|nosniff|referrer|frame'`.
+Check: `curl -sI https://mycarbook.chainintegrate.it/ | grep -i -E 'content-security|nosniff|referrer|frame'`.
 
-Le librerie servite si rigenerano con `cd tests && npm ci && npm run
-vendor` (aggiorna `vendor/SHA256SUMS`; se cambiano i file, aggiornare gli
-attributi `integrity` negli HTML — un test lo controlla).
+The served libraries are rebuilt with `cd tests && npm ci && npm run vendor` (it updates
+`vendor/SHA256SUMS`; if the files change, update the `integrity` attributes in the HTML: a test
+checks it).
 
-## 3. Nodo IPFS: ripin, controllo, pulizia, backup (MCB-17)
+## 3. IPFS node: re-pin, check, clean-up, backup (MCB-17)
 
-Dal VPS del backend (serve l'API Kubo):
+From the backend's server (it needs the Kubo API):
 
 ```bash
 cd /var/www/mycarbook/backend
-node scripts/check-pins.js --verbose     # elenca i CID e quelli mancanti
-node scripts/check-pins.js --repin       # ripinna i mancanti
-node scripts/check-pins.js               # deve dire: tutti i file sono pinnati
+node scripts/check-pins.js --verbose     # lists the CIDs and the missing ones
+node scripts/check-pins.js --repin       # re-pins the missing ones
+node scripts/check-pins.js               # must say: all files are pinned on the node
 ```
 
-`--repin` prova prima `pin/add` dalla rete IPFS, poi scarica un CAR dal
-gateway di riserva (`GATEWAY_FALLBACKS`, default `api.universalprofile.cloud`)
-e lo importa con `dag/import`; Kubo verifica ogni blocco contro il CID.
-Il gateway del nodo ha `Gateway.NoFetch=true`, ma `pin/add` via API non ne
-è influenzato.
+`--repin` first tries `pin/add` from the IPFS network, then downloads a CAR from the fallback gateway
+(`GATEWAY_FALLBACKS`, default `api.universalprofile.cloud`) and imports it with `dag/import`; Kubo
+checks every block against the CID. The node's gateway has `Gateway.NoFetch=true`, but `pin/add`
+through the API is not affected. (The script's messages are in Italian.)
 
-Pin orfani (mint/interventi annullati dopo l'upload):
+Orphan pins (mints or entries cancelled after the upload):
 
 ```bash
-node scripts/check-pins.js --gc-orphans          # elenco
-node scripts/check-pins.js --gc-orphans --apply  # rimozione (solo > 48 h, solo se l'elenco CID è completo)
+node scripts/check-pins.js --gc-orphans          # list
+node scripts/check-pins.js --gc-orphans --apply  # removal (only > 48 h, only if the CID list is complete)
 ```
 
-Timer (adattare utente e percorsi nelle unità):
+Timers (adapt user and paths in the units; in production they run as `ubuntu`):
 
 ```bash
 sudo cp deploy/systemd/mycarbook-*.service deploy/systemd/mycarbook-*.timer /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now mycarbook-check-pins.timer mycarbook-ipfs-backup.timer
+sudo systemctl enable --now mycarbook-check-pins.timer
 ```
 
-Backup fuori server: impostare in `.env` `BACKUP_REMOTE` (es.
-`rclone:b2:mycarbook-ipfs` oppure `rsync:backup@altro-host:/srv/mycarbook`)
-ed eventualmente `BACKUP_DIR`, `KEEP_LOCAL`. Ripristino: `ipfs dag import
-<file>.car` per ogni file del manifest (il CID risultante è lo stesso).
+State on 16 November 2026: the files pinned at Pinata's time were re-pinned and the daily check is on.
 
-Dopo il ripin di tutti i file, il gateway LUKSO di riserva può essere tolto
-da `frontend/js/lib/ipfs.js` e dalla CSP.
+Off-server backup (postponed): set `BACKUP_REMOTE` in `.env` (e.g. `rclone:b2:mycarbook-ipfs` or
+`rsync:backup@other-host:/srv/mycarbook`) and optionally `BACKUP_DIR`, `KEEP_LOCAL`, then enable
+`mycarbook-ipfs-backup.timer`. Restore: `ipfs dag import <file>.car` for every file of the manifest
+(the resulting CID is the same). The backup holds vehicle records with plate and VIN: the destination
+must be private. Until it exists, the Pinata account must not be closed.
 
-## 4. Infrastruttura ancora da fare
+Once no file has been missing for a while, LUKSO's fallback gateway can be removed from
+`frontend/js/lib/ipfs.js` and from the CSP.
 
-- Tratto VPS → nodo IPFS: tunnel WireGuard/SSH o TLS + `API.Authorizations`
-  (Kubo ≥ 0.25), poi `IPFS_API_AUTH` (MCB-13).
-- Gateway `ipfs.chainintegrate.it`: intestazioni applicate il 16/11
-  (`deploy/nginx/ipfs-gateway-headers.conf`, nel blocco `server` HTTPS di
-  `/etc/nginx/sites-available/ipfs-gateway` sul server del nodo). Ogni
-  modifica va provata prima in Report-Only, perché il gateway è condiviso
-  con le altre app; al primo PDF in chiaro aperto direttamente dal gateway,
-  verificare che si visualizzi (MCB-10).
-- Nodo: valutare `Reprovider.Strategy=pinned` (MCB-06).
-- Backend: `RPC_URL_42` verso il nodo LUKSO proprio (MCB-16).
+## 4. Infrastructure still open
 
-## 5. Conservazione dei log (massimo 30 giorni)
+- Server → IPFS node link: WireGuard/SSH tunnel or TLS + `API.Authorizations` (Kubo ≥ 0.25), then
+  `IPFS_API_AUTH` (MCB-13). Accepted risk for now: only files meant to be public travel on it.
+- Gateway `ipfs.chainintegrate.it`: headers applied on 16 November 2026
+  (`deploy/nginx/ipfs-gateway-headers.conf`, in the HTTPS `server` block of
+  `/etc/nginx/sites-available/ipfs-gateway` on the node's server). Every change must be tried in
+  Report-Only first, because the gateway is shared with the other apps; when the first plain PDF is
+  opened straight from the gateway, check that it shows (MCB-10).
+- Node: consider `Reprovider.Strategy=pinned` (MCB-06).
+- Backend: `RPC_URL_42` pointing to ChainIntegrate's own LUKSO node (MCB-16).
 
-L'informativa (`frontend/privacy.html`, punto 5) dice che i registri
-tecnici del server sono conservati al massimo 30 giorni.
+## 5. Log retention (at most 30 days)
 
-- Nginx: ruotato da logrotate (default Ubuntu: 14 giorni), verificare con
+The privacy policy (`frontend/privacy.html`, section 5) says the server's technical logs are kept at
+most 30 days.
+
+- Nginx: rotated by logrotate (Ubuntu default: 14 days); check with
   `grep -E "rotate|daily|weekly" /etc/logrotate.d/nginx`.
-- PM2 (`/root/.pm2/logs/`): senza rotazione crescono per sempre. Una volta,
-  sul server (vale per tutti i processi PM2 di root):
+- PM2 (`/root/.pm2/logs/`): without rotation they grow forever. Once, on the server (it applies to
+  every root PM2 process), done on 16 November 2026:
 
 ```bash
 sudo pm2 install pm2-logrotate
 sudo pm2 set pm2-logrotate:rotateInterval '0 0 * * *'
 sudo pm2 set pm2-logrotate:retain 30
+sudo pm2 set pm2-logrotate:max_size 100M
 sudo pm2 set pm2-logrotate:compress true
+sudo pm2 save
 ```
 
-  Per svuotare subito i log vecchi di MyCarBook: `sudo pm2 flush mycarbook-backend`.
+  To clear MyCarBook's old logs at once: `sudo pm2 flush mycarbook-backend`.

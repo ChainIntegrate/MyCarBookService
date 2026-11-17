@@ -1,180 +1,155 @@
-# MyCarBook
+# MyCarBook Service
 
-Storico manutenzioni veicolo on-chain su LUKSO. Mint libero (ogni utente
-minta il proprio veicolo), nessuna cifratura (dato pubblico per natura della
-chain — coerente con l'uso in fase di rivendita).
+Vehicle history on LUKSO for owners and the whole automotive chain: a free personal logbook, plus
+attested service records from workshops, body shops, dealers and manufacturers, each working in its
+own register. Access through the ChainIntegrate Account; personal data encrypted on ChainIntegrate's
+IPFS node and shared only with the owner's consent.
 
-**Live**: https://mycarbook.chainintegrate.it
+> **Status.** This repository starts as a copy of [MyCarBook](https://github.com/ChainIntegrate/MyCarBook)
+> (full history up to November 2026), the personal logbook live on LUKSO mainnet. Everything below
+> describes that starting point, **MyCarBook V2**, as it runs today. The design of the new version
+> is being written in `docs/DESIGN.md`.
 
-## Struttura
+**Live (V2)**: https://mycarbook.chainintegrate.it
+
+## Layout
 
 ```
-mycarbook/
 ├── contracts/
-│   ├── MyCarBook.sol      — v1, storico, non più in uso dal frontend
-│   └── MyCarBookV2.sol    — v2, DEPLOYATO e IN USO su testnet e mainnet
+│   ├── MyCarBook.sol         — v1, historical, no longer used by the frontend
+│   └── MyCarBookV2.sol       — v2, DEPLOYED and IN USE on testnet and mainnet
 ├── scripts/
-│   ├── deploy.js           — deploy v1
-│   └── deploy-v2.js        — deploy v2
+│   ├── deploy.js             — v1 deployment
+│   └── deploy-v2.js          — v2 deployment
 ├── backend/
-│   ├── server.js            — avvio; logica in lib/ (app, auth, file, schema)
-│   ├── lib/                 — pin su nodo IPFS proprio con firma ERC-1271
-│   │   legata al contenuto; raccolta CID e operazioni sui pin
-│   ├── scripts/             — check-pins (controllo/ripin/orfani), backup CAR
-│   ├── test/                — test negativi del backend (node --test)
-│   ├── allowed-addresses.json — lista manuale indirizzi autorizzati alla
-│   │   foto veicolo (NON committato, vive solo sul VPS — vedi .gitignore)
+│   ├── server.js             — start-up; logic in lib/ (app, auth, files, schema)
+│   ├── lib/                  — pinning to ChainIntegrate's IPFS node, with an ERC-1271
+│   │                           signature bound to the content; CID collection and pin operations
+│   ├── scripts/              — check-pins (check / re-pin / orphans), CAR backup
+│   ├── test/                 — backend negative tests (node --test)
+│   ├── allowed-addresses.json — manual list of addresses allowed to add a vehicle photo
+│   │                           (NOT committed, lives only on the server — see .gitignore)
 │   └── allowed-addresses.example.json
-├── deploy/                — vhost Nginx + intestazioni di sicurezza (CSP), unità systemd
-├── docs/                  — AUDIT.md (stato dei punti), OPERATIONS.md, PRIVACY.md
-├── tests/                 — test frontend (jsdom) ed end-to-end (Chromium + Nginx)
+├── deploy/                   — Nginx vhost and security headers (CSP), systemd units
+├── docs/                     — AUDIT.md (status of each finding), OPERATIONS.md, PRIVACY.md
+├── tests/                    — frontend (jsdom) and end-to-end tests (Chromium + Nginx)
 └── frontend/
-    ├── index.html            — UI pubblica, vanilla JS (js/app.js), mobile-first, i18n EN/IT
-    ├── privacy.html          — informativa sulla privacy (IT/EN)
-    ├── js/, css/             — codice e stili (nessuno script/stile inline: CSP)
-    ├── vendor/, fonts/       — ethers, erc725.js e font serviti in locale (SHA256SUMS)
-    ├── admin-collection.html — pannello admin (owner contratto): metadata
-    │   di collezione + immagine per singolo tokenId
-    └── config.js              — indirizzi contratto per rete + ABI
+    ├── index.html            — public UI, vanilla JS (js/app.js), mobile-first, EN/IT
+    ├── privacy.html          — privacy policy (IT/EN)
+    ├── js/, css/             — code and styles (no inline script or style: CSP)
+    ├── vendor/, fonts/       — ethers, erc725.js and fonts served locally (SHA256SUMS)
+    ├── admin-collection.html — admin page (contract owner): collection metadata and the
+    │                           image of a single tokenId
+    └── config.js             — contract addresses per network, ABI
 ```
 
-## Stato attuale
+## Current state (V2)
 
-**MyCarBookV2 è il contratto in uso, deployato e verificato su entrambe le
-reti**:
+**MyCarBookV2 is the contract in use, deployed and verified on both networks**:
 - Testnet (4201): `0xcf1e38bB8aB96B5b0100Af55dC7E7eF9D2e2DE60`
 - Mainnet (42): `0x24e9cd569AC99B6DF47CA767508cF63105318195`
 
-`MyCarBook.sol` (v1) resta nel repo per riferimento storico ma non è più
-collegato al frontend.
+`MyCarBook.sol` (v1) stays in the repository for reference only; the frontend no longer uses it.
 
-### Funzionalità v2 rispetto al v1
+### What V2 adds to v1
 
-- **Fix bug km**: `logIntervention` aggiorna `vehicleInfo.km` solo se il
-  nuovo valore è maggiore del massimo registrato — un intervento retroattivo
-  con km più basso non fa mai regredire il contachilometri mostrato.
-- **`categoryFlags`** (bitmask `uint8`) su ogni intervento: categorie
-  combinabili — `CATEGORY_MECHANICAL=1`, `CATEGORY_BODYWORK=2`,
-  `CATEGORY_TIRES=4`, `CATEGORY_ELECTRICAL=8`, `CATEGORY_CLEANING=16`,
-  `CATEGORY_OTHER=32`.
-- **Allegato documento su intervento**: valutato con hash on-chain, poi
-  **scartato** ("troppo certificato" per lo scopo del progetto). Soluzione
-  adottata: solo comodità, nessun hash — il link IPFS viene agganciato in
-  coda alla `description` con un marcatore `[doc:ipfs://...]`, riconosciuto
-  e mostrato come link cliccabile dalla UI in lettura. Nessun campo dedicato
-  nel contratto.
+- **Mileage fix**: `logIntervention` updates `vehicleInfo.km` only when the new value is higher than
+  the highest recorded, so a backdated entry with a lower mileage never moves the odometer back.
+- **`categoryFlags`** (a `uint8` bitmask) on every entry; categories can be combined:
+  `CATEGORY_MECHANICAL=1`, `CATEGORY_BODYWORK=2`, `CATEGORY_TIRES=4`, `CATEGORY_ELECTRICAL=8`,
+  `CATEGORY_CLEANING=16`, `CATEGORY_OTHER=32`.
+- **Document attached to an entry**: an on-chain hash was considered and **dropped** (too "certified"
+  for the project's purpose). Adopted instead, as a convenience with no hash: the IPFS link is appended
+  to the `description` with a `[doc:ipfs://...]` marker, which the UI recognises and shows as a link.
+  No dedicated field in the contract.
 
-### Sicurezza upload gated + storage
+### Gated uploads and storage
 
-> Aggiornato dopo l'audit del 4/11/2026: vedi [docs/AUDIT.md](docs/AUDIT.md).
+> Updated after the audit of 4 November 2026: see [docs/AUDIT.md](docs/AUDIT.md).
 
-Fino a poco fa, il controllo "chi può caricare foto/documento" era applicato
-**solo lato UI** (bottone disabilitato) — l'endpoint `/api/pin-file` restava
-comunque chiamabile direttamente da chiunque, bypassando completamente il
-gate. Corretto: ora ogni chiamata a `/api/pin-file` richiede una **firma
-ERC-1271** (stesso pattern già in uso su MatchPredictor v3) che il backend
-verifica prima di autorizzare il pin:
+Every call to `/api/pin-file` and `/api/pin-json` needs an **ERC-1271 signature**, checked by the
+backend before it pins anything:
 
-1. Il frontend firma un messaggio con la UP connessa che contiene dominio,
-   `purpose`, indirizzo, rete, **impronta SHA-256 del file/JSON**, nonce
-   casuale e istante — un tap in più sulla UP, oltre alla transazione.
-2. Il backend verifica la firma via `isValidSignature` (ERC-1271) sulla UP
-   del chiamante: valida 5 minuti, **una sola volta**, solo per quel
-   contenuto, solo su mainnet (chainId 42).
-3. Solo dopo, controlla l'autorizzazione in base al `purpose`:
-   - `metadata` (`/api/pin-json`, mint) → qualunque UP, JSON con schema rigido
-   - `photo` → lista manuale **o** tier Bronze+
+1. The frontend signs, with the connected Universal Profile, a message holding the domain, the
+   `purpose`, the address, the network, the **SHA-256 fingerprint of the file or JSON**, a random
+   nonce and the time: one more confirmation in the UP, besides the transaction.
+2. The backend checks the signature with `isValidSignature` (ERC-1271) on the caller's UP: valid for
+   5 minutes, **once**, for that content only, on mainnet only (chainId 42).
+3. Only then it checks the permission for the `purpose`:
+   - `metadata` (`/api/pin-json`, mint) → any UP, JSON with a strict schema
+   - `photo` → the manual list **or** tier Bronze and above
    - `document` → tier Gold
-   - `admin` → UP owner (`ADMIN_UP_ADDRESS`) **e** firma della chiave
-     controller precisa `ADMIN_SIGNER_ADDRESS` (da `.env`)
+   - `admin` → the owner UP (`ADMIN_UP_ADDRESS`); `ADMIN_SIGNER_ADDRESS=any` accepts any of its
+     controllers with the SIGN permission, an address restricts it to one key (from `.env`)
 
-Anche `/api/pin-json` richiede ora la firma (prima era aperto a chiunque).
-Il tipo dei file si ricava dai byte (JPEG/PNG/WebP, PDF solo per i
-documenti); le foto devono arrivare senza EXIF (l'app le ricodifica).
-Rate limit per IP reale (`trust proxy` loopback dietro Nginx).
+The file type comes from its bytes (JPEG/PNG/WebP, PDF for documents only); photos must arrive without
+EXIF (the app re-encodes them). Rate limit per real IP (`trust proxy` loopback behind Nginx).
 
-**Storage**: da Pinata al [nodo IPFS personale](https://ipfs.chainintegrate.it)
-(Kubo, VPS Contabo dedicata, `Gateway.NoFetch=true` — serve solo contenuti
-pinnati da noi). L'API di pin (`:5001`) è raggiungibile solo dall'IP del VPS
-di produzione (whitelist a livello di rete; supportata anche
-`IPFS_API_AUTH`). Il contenuto pinnato in passato su Pinata **non** è sul
-nodo proprio finché non viene ripinnato con `npm run repin` (MCB-17): fino
-ad allora si legge dal gateway LUKSO di riserva.
+**Storage**: moved from Pinata to [ChainIntegrate's IPFS node](https://ipfs.chainintegrate.it) (Kubo,
+dedicated server, `Gateway.NoFetch=true`: it serves only content pinned by ChainIntegrate). The pinning
+API (`:5001`) is reachable only from the production server's IP (network allow-list; `IPFS_API_AUTH` is
+supported too). The files pinned earlier on Pinata were re-pinned on the node on 16 November 2026, and
+a daily check re-pins anything missing (MCB-17); LUKSO's gateway stays as a fallback.
 
-### Feature gating a fasce, tramite ChainIntegrate Membership
+### Tier-based features, through ChainIntegrate Membership
 
-Tre funzionalità della UI sono sbloccate in base al tier posseduto su
-[ChainIntegrate Membership](https://github.com/ChainIntegrate/chainintegrate-membership)
-(letto on-chain via `tierOf(address)`, nessuna sincronizzazione manuale) —
-gerarchia crescente, ogni tier include i vantaggi di quelli sotto:
+Three UI features are unlocked by the tier held in
+[ChainIntegrate Membership](https://github.com/ChainIntegrate/chainintegrate-membership) (read on-chain
+with `tierOf(address)`, no manual sync). Each tier includes the ones below:
 
-| Tier | Prezzo indicativo | Sblocca |
+| Tier | Indicative price | Unlocks |
 |---|---|---|
-| Bronze | ~50 LYX | Foto veicolo al mint |
-| Silver | ~200 LYX | + Categorie intervento (checkbox) |
-| Gold | 500 LYX | + Documento allegato a un intervento |
+| Bronze | ~50 LYX | Vehicle photo at mint |
+| Silver | ~200 LYX | + Service categories (check boxes) |
+| Gold | 500 LYX | + A document attached to an entry |
 
-I prezzi non sono applicati né verificati dal contratto (mint resta
-`onlyOwner`, gestito a mano da Simone dopo ricezione pagamento fuori banda)
-— sono solo una convenzione operativa, non scritti nel codice.
+Prices are neither applied nor checked by the contract (the membership mint is `onlyOwner`, handled by
+hand by ChainIntegrate after an off-chain payment): an operating convention, not written in the code.
 
-La **foto veicolo** ha anche una seconda via di sblocco, indipendente dalla
-membership: presenza in `backend/allowed-addresses.json` (lista manuale,
-storica, mantenuta per compatibilità).
+The **vehicle photo** has a second way in, independent of the membership: being listed in
+`backend/allowed-addresses.json` (manual list, historical, kept for compatibility).
 
-### Mint automatico a pagamento (valutato, non implementato)
+The new version replaces the membership with the ChainIntegrate Account and a service authorization
+(see `docs/DESIGN.md`).
 
-Si era considerato un mint/upgrade membership completamente self-service
-(l'utente paga in LYX, il contratto minta/aggiorna da solo). Non fattibile
-senza un nuovo deploy: le funzioni di mint/upgrade sono `onlyOwner`, e
-`Ownable` non permette doppia titolarità — trasferire l'ownership a una
-chiave operativa nel backend avrebbe tolto a Simone la possibilità di
-gestire tutto a mano dalla propria UP. Deciso di **non** procedere:
-gestione manuale confermata come via definitiva per ora.
+### Self-service paid mint (considered, not implemented)
 
-- **Immagine per singolo tokenId dopo il mint**: gestita da
-  `admin-collection.html` (sezione dedicata) — solo l'owner del contratto
-  può farlo (`setDataForTokenId` è `onlyOwner`). La pagina fa merge col
-  metadata esistente, ma il contratto permette all'owner di sostituire
-  l'intera scheda di qualunque veicolo, e il proprietario del veicolo non
-  può correggerla da solo (MCB-04, da risolvere col prossimo contratto).
+A fully self-service membership mint/upgrade (the user pays in LYX, the contract mints or upgrades by
+itself) was considered. Not possible without a new deployment: mint and upgrade are `onlyOwner`, and
+`Ownable` allows a single owner, so handing ownership to an operating key in the backend would have
+taken the manual management away from ChainIntegrate's own UP. Decided **not** to proceed.
 
-- **Metadata di collezione** (icona/banner/descrizione, visibili su
-  universaleverything.io a livello di collezione): stessa pagina
-  `admin-collection.html`, sezione separata. Impostata su **entrambe** le
-  reti.
+- **Image of a single tokenId after the mint**: handled by `admin-collection.html` (its own section);
+  only the contract owner can do it (`setDataForTokenId` is `onlyOwner`). The page merges with the
+  existing metadata, but the contract lets the owner replace the whole record of any vehicle, and the
+  vehicle's owner cannot correct it alone (MCB-04: an accepted limit of V2).
+- **Collection metadata** (icon, banner, description, shown on universaleverything.io at collection
+  level): same page, separate section. Set on **both** networks.
+- **Translations**: the UI's static texts and the labels of the on-chain `attributes` (Brand / Model /
+  Trim / Plate / VIN, always stored in English) are translated on screen by the active language; the
+  on-chain data stays unchanged.
+- **Branding**: logo, favicon, banner, generated with an external AI tool.
 
-- **Traduzioni**: sia i testi statici della UI sia le etichette degli
-  `attributes` on-chain (Brand/Model/Trim/Plate/VIN, salvati sempre in
-  inglese) vengono tradotte a video in base alla lingua attiva — la
-  traduzione avviene solo in UI, il dato on-chain resta invariato.
+## Design notes
 
-- **Branding**: logo, favicon, banner — generati con AI esterna da Simone.
+- Fonts: Oswald (display, printed headings), Inter (body), JetBrains Mono (mileage, dates, amounts:
+  odometer-like readability).
+- Palette: petrol black with brass (`--brass`) as the only accent, engine green for positive states.
+- Signature element: each entry is drawn as a logbook "stamp" (a dashed round badge with the date).
+- `erc725.js` is an ESM bundle built locally (`frontend/vendor/`, `cd tests && npm run vendor`), no
+  longer from esm.sh: the CSP allows only code served by the site.
+- The contract owner (branding, metadata) and the deployer (who pays the gas) are always separate
+  addresses, on both networks.
 
-## Note di design (per riferimento futuro)
+## Not implemented in V2 (deliberately)
 
-- Font: Oswald (display, header stampati), Inter (corpo), JetBrains Mono
-  (km/date/importi — leggibilità dati tipo contachilometri).
-- Palette: nero-petrolio + ottone (`--brass`) come accento unico, verde
-  motore per stati positivi.
-- Elemento firma: ogni intervento è renderizzato come un "timbro" di
-  libretto (badge circolare tratteggiato con la data), coerente col nome
-  del prodotto.
-- `erc725.js` è un bundle ESM generato in locale (`frontend/vendor/`,
-  `cd tests && npm run vendor`), non più da esm.sh: la CSP ammette solo
-  codice servito dal sito.
-- Owner del contratto (branding/metadata) e deployer (chi paga il gas) sono
-  sempre indirizzi separati per disciplina, su entrambe le reti.
+- Self-service paid membership mint/upgrade (see above).
+- No encryption of any data: an explicit V2 choice, consistent with resale use (a history a future
+  buyer can check). The new version changes this: see `docs/DESIGN.md`.
 
-## Non ancora implementato (rimandato volontariamente)
-
-- Mint/upgrade membership self-service a pagamento (vedi sopra — richiede
-  nuovo deploy con ruoli separati, non ritenuto necessario per ora).
-- Nessuna cifratura di alcun dato — scelta esplicita, coerente con l'uso
-  in fase di rivendita (storico verificabile da un futuro acquirente).
-## Test
+## Tests
 
 ```
-cd backend && npm ci && npm test      # backend: firma, schema, file, rate limit, pin IPFS
-cd tests && npm ci && npm test        # frontend (jsdom) + end-to-end (Chromium, Nginx reale)
+cd backend && npm ci && npm test      # backend: signature, schema, files, rate limit, IPFS pins
+cd tests && npm ci && npm test        # frontend (jsdom) + end-to-end (Chromium, real Nginx)
 ```
