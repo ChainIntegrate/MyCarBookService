@@ -1,106 +1,98 @@
-# MyCarBook — inventario dei dati e proposta di riduzione
+# MyCarBook — data inventory and reduction proposal
 
-Riferimento: audit MCB-05 / MCB-06 ([AUDIT.md](AUDIT.md)). Stato del codice
-dopo le correzioni del 16/11/2026, contratto MyCarBookV2 invariato.
+Reference: audit findings MCB-05 / MCB-06 ([AUDIT.md](AUDIT.md)). State of the code after the fixes
+of 16 November 2026; the MyCarBookV2 contract is unchanged. This document describes **V2**; the new
+version's data model is in `docs/DESIGN.md`.
 
-## 1. Dove finisce ogni dato
+## 1. Where each piece of data goes
 
-### Sulla catena LUKSO (pubblico, permanente, non cancellabile da nessuno)
+### On the LUKSO chain (public, permanent, deletable by no one)
 
-| Dato | Dove | Chi lo scrive | Note |
+| Data | Where | Written by | Notes |
 |---|---|---|---|
-| Indirizzo UP del proprietario ↔ veicolo | `Transfer`, `VehicleMinted(owner)`, `tokenOwnerOf` | mint / trasferimento | la UP spesso ha nome e avatar (LSP3) |
-| Data immatricolazione, data di possesso, km al mint | storage `vehicleInfo`, evento `VehicleMinted` | mint | non modificabili |
-| Km massimo registrato | storage `vehicleInfo.km` | ogni intervento | solo in salita |
-| Per ogni intervento: data, km, categorie, importo (centesimi), descrizione libera fino a 280 byte, indirizzo di chi registra (`loggedBy`) | evento `InterventionLogged` | proprietario corrente | la descrizione può contenere dati personali scritti dall'utente; il link al documento è in coda alla descrizione |
-| Impronta (keccak256) e link `ipfs://` della scheda veicolo | `TokenIdDataChanged` / `getDataForTokenId(LSP4Metadata)` | mint; owner del contratto con `setDataForTokenId` | anche le versioni precedenti restano negli eventi |
+| Owner's UP address ↔ vehicle | `Transfer`, `VehicleMinted(owner)`, `tokenOwnerOf` | mint / transfer | the UP often has a name and picture (LSP3) |
+| Registration date, ownership date, mileage at mint | `vehicleInfo` storage, `VehicleMinted` event | mint | cannot be changed |
+| Highest recorded mileage | `vehicleInfo.km` storage | every entry | only goes up |
+| For each entry: date, mileage, categories, amount (cents), free description up to 280 bytes, address of who logged it (`loggedBy`) | `InterventionLogged` event | current owner | the description may hold personal data typed by the user; the document link is appended to it |
+| Fingerprint (keccak256) and `ipfs://` link of the vehicle record | `TokenIdDataChanged` / `getDataForTokenId(LSP4Metadata)` | mint; contract owner with `setDataForTokenId` | earlier versions stay in the events too |
 
-### Su IPFS (pubblico per chi conosce il CID; il CID è sulla catena)
+### On IPFS (public to whoever knows the CID; the CID is on the chain)
 
-| Dato | File | Note |
+| Data | File | Notes |
 |---|---|---|
-| Nome del veicolo, marca, modello, allestimento, **targa**, **VIN** | JSON LSP4Metadata | targa e VIN facoltativi; pinnato sul nodo ChainIntegrate, annunciato alla rete IPFS, possibili copie su gateway terzi |
-| Foto del veicolo | immagine | ricodificata nel browser: senza EXIF/GPS (il backend rifiuta immagini con metadati) |
-| Documento dell'intervento (fattura, ecc.) | immagine o PDF | immagini ripulite; **PDF caricati così come sono** (autore, programma, ecc.) e con il contenuto visibile (indirizzi, nomi) |
+| Vehicle name, brand, model, trim, **plate**, **VIN** | LSP4Metadata JSON | plate and VIN optional; pinned on ChainIntegrate's node, announced to the IPFS network, possible copies on third-party gateways |
+| Vehicle photo | image | re-encoded in the browser: no EXIF/GPS (the backend refuses images with metadata) |
+| Entry document (invoice, etc.) | image or PDF | images cleaned; **PDFs uploaded as they are** (author, software, etc.) and with their content visible (addresses, names) |
 
-### Sul server ChainIntegrate (non pubblico)
+### On ChainIntegrate's server (not public)
 
-| Dato | Dove | Conservazione |
+| Data | Where | Retention |
 |---|---|---|
-| Indirizzo IP | log di Nginx; memoria del rate limit (15 min) | log Nginx: secondo la rotazione del VPS (da definire) |
-| Firma e indirizzo UP degli upload | solo in memoria durante la verifica; nonce usati per ~6 min | non salvati |
-| CID pinnati, scopo, istante (senza indirizzo) | `backend/data/pins.jsonl` | finché serve alla pulizia degli orfani |
-| Lista manuale di accesso foto | `backend/allowed-addresses.json` | gestione manuale |
+| IP address | Nginx logs; rate-limit memory (15 min) | Nginx logs: 14 days (logrotate); PM2 logs: 30 days (pm2-logrotate) |
+| Upload signature and UP address | in memory only, during the check; used nonces for about 6 min | not stored |
+| Pinned CIDs, purpose, time (no address) | `backend/data/pins.jsonl` | as long as the orphan clean-up needs it |
+| Manual photo access list | `backend/allowed-addresses.json` | managed by hand |
 
-### Terze parti
+### Third parties
 
-- Estensione / app Universal Profile dell'utente e il suo RPC LUKSO.
-- Gateway `api.universalprofile.cloud`: solo per i file non ancora
-  presenti sul nostro nodo (da eliminare dopo il ripin, MCB-17).
-- Backend: RPC pubblico LUKSO per verificare firme e livello membership.
-- **Non più**: Google Fonts, jsDelivr, esm.sh (tutto servito dal nostro
-  dominio).
+- The user's Universal Profile extension or app, and its LUKSO RPC.
+- Gateway `api.universalprofile.cloud`: only for files not on ChainIntegrate's node (a fallback since
+  the re-pin of 16 November 2026, MCB-17).
+- Backend: LUKSO's public RPC, to check signatures and the membership tier.
+- **No longer**: Google Fonts, jsDelivr, esm.sh (everything is served from ChainIntegrate's domain).
 
-## 2. Avvisi nel momento in cui l'utente scrive (fatto)
+## 2. Notices at the moment the user writes (done)
 
-- Targa/VIN: riquadro accanto ai campi ("facoltativi, pubblici e
-  permanenti, collegabili alla tua UP, lasciali vuoti se non ti servono") e
-  casella di presa d'atto obbligatoria se uno dei due è compilato.
-- Descrizione intervento: avviso sotto il campo (pubblica, permanente, non
-  scrivere nomi/indirizzi).
-- Foto: avviso pubblico/permanente + rimozione automatica dei metadati.
-- Documento: avviso pubblico/permanente, invito a non allegare dati
-  personali, nota che i PDF possono contenere dati nascosti.
-- Schermata iniziale e "Come funziona": testo corretto, elenco dei dati
-  pubblici, "Chi può modificare cosa".
+- Plate/VIN: a box next to the fields ("optional, public and permanent, linkable to your UP, leave them
+  empty if you don't need them") and a required acknowledgement check box when either is filled.
+- Entry description: a notice under the field (public, permanent, don't write names or addresses).
+- Photo: public/permanent notice and automatic removal of metadata.
+- Document: public/permanent notice, advice not to attach personal data, a note that PDFs may hold
+  hidden data.
+- First screen and "How it works": corrected text, list of public data, "Who can change what".
 
-## 3. Proposta per ridurre i dati personali
+## 3. Proposal to reduce personal data
 
-Senza nuovo contratto (solo app/backend):
+Without a new contract (app and backend only):
 
-1. **Targa e VIN non più in chiaro per default.** Proposta: il campo VIN
-   salva solo le ultime 6 cifre (sufficienti a un acquirente per un
-   confronto con il libretto) oppure un'impronta `keccak256(VIN
-   normalizzato + tokenId)` verificabile da chi ha il VIN; targa non
-   salvata (cambia con la reimmatricolazione e identifica il proprietario).
-   Da decidere: utilità per la rivendita contro esposizione.
-2. **Documenti**: accettare solo immagini (ripulite) oppure convertire i PDF
-   in immagine nel browser (pdf.js) prima dell'upload; in alternativa
-   ripulire i metadati PDF lato server (qpdf) prima del pin.
-3. **Descrizione libera**: rilevare nel browser numeri di telefono,
-   email, codici fiscali, IBAN e chiedere conferma prima della firma.
-4. **Importi**: renderli facoltativi in modo esplicito (già lo sono) e
-   permettere fasce invece della cifra esatta nelle statistiche.
-5. **Nodo IPFS**: `Reprovider.Strategy=pinned` (o nessun annuncio) per non
-   pubblicizzare i CID sulla rete; procedura scritta per smettere di
-   servire un file su richiesta dell'interessato (unpin + verifica).
-6. **Log Nginx**: conservazione breve (es. 14 giorni) e IP troncati.
+1. **Plate and VIN no longer in clear by default.** Proposal: the VIN field stores only the last 6
+   characters (enough for a buyer to compare with the registration document), or a fingerprint
+   `keccak256(normalised VIN + tokenId)` checkable by whoever has the VIN; the plate not stored (it
+   changes with re-registration and identifies the owner). To decide: usefulness at resale versus
+   exposure.
+2. **Documents**: accept only (cleaned) images, or convert PDFs to images in the browser (pdf.js)
+   before the upload; alternatively strip PDF metadata on the server (qpdf) before pinning.
+3. **Free description**: detect phone numbers, e-mails, tax codes, IBANs in the browser and ask for
+   confirmation before signing.
+4. **Amounts**: make them explicitly optional (they already are) and allow ranges instead of the
+   exact figure in the statistics.
+5. **IPFS node**: `Reprovider.Strategy=pinned` (or no announcing) to avoid advertising the CIDs on the
+   network; a written procedure to stop serving a file at the data subject's request (unpin + check).
+6. **Nginx logs**: short retention (e.g. 14 days) and truncated IPs.
 
-Con il nuovo contratto (rimandato):
+With a new contract (now the new version of this repository, see `docs/DESIGN.md`):
 
-7. Scheda veicolo modificabile solo dal proprietario del token (rettifica),
-   niente riscrittura da parte dell'owner del contratto (MCB-04).
-8. Dati identificativi fuori dalla catena e fuori da IPFS pubblico,
-   condivisi con l'acquirente su richiesta (es. cifrati con una chiave che
-   il venditore consegna), mantenendo on-chain solo l'impronta.
+7. Vehicle record changeable only by the token's owner (rectification), no rewriting by the contract
+   owner (MCB-04).
+8. Identifying data off the chain and off public IPFS, shared with a buyer on request (e.g. encrypted
+   with a key the seller hands over), with only a fingerprint on-chain.
 
-## 4. Informativa
+## 4. Privacy policy
 
-Pubblicata in [`frontend/privacy.html`](../frontend/privacy.html) il
-16/11/2026, con la stessa impostazione dell'informativa di ChainIntegrate
-Account (repository up-onboarding): stesso titolare, contatti,
-conservazione dei log (massimo 30 giorni) e diritti. Se cambia il
-trattamento (nuovi campi, backup, terze parti) vanno aggiornate insieme
-la pagina, la sua data e questo documento. Elementi coperti:
+Published in [`frontend/privacy.html`](../frontend/privacy.html) on 16 November 2026, with the same
+structure as the ChainIntegrate Account policy (up-onboarding repository): same controller, contacts,
+log retention (at most 30 days) and rights. When the processing changes (new fields, backup, third
+parties), the page, its date and this document must be updated together. It covers:
 
-- titolare: ChainIntegrate (dati societari), contatto info@chainintegrate.it;
-- finalità: tenuta del libretto di manutenzione scelto dall'utente;
-  conservazione dei file su IPFS; verifica dei permessi (membership);
-- base giuridica: da indicare (esecuzione del servizio richiesto);
-- dati trattati e dove: sezione 1;
-- natura pubblica e permanente dei dati sulla catena; cosa può essere
-  rimosso (pin sul nostro nodo, log) e cosa no (catena, copie altrui);
-- destinatari/terze parti: sezione 1 "Terze parti";
-- conservazione: sezione 1;
-- diritti e come esercitarli; procedura di rimozione dal nodo;
-- data dell'ultimo aggiornamento.
+- the controller and contacts (info@chainintegrate.it);
+- purposes: keeping the logbook the user chose; storing the files on IPFS; checking permissions
+  (membership);
+- legal bases: performing the service requested (Art. 6.1.b GDPR), legitimate interest in security
+  (Art. 6.1.f);
+- the data processed and where: section 1;
+- the public and permanent nature of on-chain data; what can be removed (pins on ChainIntegrate's node,
+  logs) and what cannot (the chain, other people's copies);
+- recipients and third parties: section 1, "Third parties";
+- retention: section 1;
+- rights and how to exercise them, the removal procedure on the node;
+- the date of the last update.

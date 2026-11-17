@@ -1,394 +1,317 @@
-# Audit 2026-11 — MyCarBook
+# Audit 2026-11 — MyCarBook (V2)
 
-Revisione di contratto, backend, frontend e infrastruttura del 4 novembre
-2026 (report `04-mycarbook.md` e `audit-mycarbook.md`, revisione `e38be66`).
-Ogni punto è tracciato qui con il suo stato.
+Review of the contract, backend, frontend and infrastructure of 4 November 2026 (reports
+`04-mycarbook.md` and `audit-mycarbook.md`, revision `e38be66`). Each finding is tracked here with its
+status. It concerns **MyCarBook V2** in the [MyCarBook](https://github.com/ChainIntegrate/MyCarBook)
+repository, where the fixes were made: pull request numbers below are that repository's. The new
+version designed in this repository starts from this state.
 
-Il repository è pubblico: i punti di sicurezza ancora aperti sono descritti
-in modo generico finché non vengono corretti; il dettaglio tecnico viene
-aggiunto insieme alla correzione.
+The repository is public: security findings still open are described in general terms until they are
+fixed; the technical detail is added together with the fix.
 
-Legenda: ✅ corretto, con test negativo, in produzione · ⏳ aperto ·
-📌 limite accettato e documentato: richiederebbe un nuovo contratto
-(versione 2), oggi non previsto · ➖ segnalazione non confermata
+Legend: ✅ fixed, with a negative test, in production · ⏳ open · 📌 accepted and documented limit: it
+would need a new contract, not planned for V2 · ➖ finding not confirmed
 
-Postura al 4/11: debole (1 High, 7 Medium, 7 Low, 2 Info). Correzioni
-rilasciate in produzione il 16/11/2026 (PR #1 e seguenti): vedi
-[Rilascio](#rilascio).
+Posture on 4 November: weak (1 High, 7 Medium, 7 Low, 2 Info). Fixes released to production on
+16 November 2026 (MyCarBook PR #1 and following): see [Release](#release).
 
-**Decisione del 16/11/2026: nessun nuovo contratto per ora.** MyCarBook
-resta un libretto **autodichiarato**, non uno storico certificato, con i
-limiti scritti in modo chiaro nell'app, in "Come funziona", nella guida e
-nell'[informativa](../frontend/privacy.html). I punti 📌 (MCB-04, MCB-08,
-MCB-11, MCB-12) sono limiti accettati, come i punti "Documented" / "Version 2"
-di GasTrace. Condizioni:
-- la UP owner del contratto può sostituire la scheda di qualunque veicolo:
-  i permessi dei suoi controller vanno tenuti al minimo (report generale,
-  GEN-01);
-- le richieste dei proprietari (correzione, rimozione di targa/VIN, foto)
-  si gestiscono con la procedura dell'informativa, punto 7.
-Un nuovo contratto andrebbe riconsiderato se MyCarBook dovesse essere
-presentato come storico affidabile per la compravendita (officine,
-concessionari) o se gli utenti crescessero al punto da rendere le
-correzioni a mano frequenti.
+**Decision of 16 November 2026: no new contract for V2.** MyCarBook V2 stays a **self-declared**
+logbook, not a certified history, with its limits written plainly in the app, in "How it works", in
+the guide and in the [privacy policy](../frontend/privacy.html). The 📌 findings (MCB-04, MCB-08,
+MCB-11, MCB-12) are accepted limits, like GasTrace's "Documented" / "Version 2" findings. Conditions:
+- the contract's owner UP can replace the record of any vehicle: its controllers' permissions must be
+  kept to a minimum (general report, GEN-01);
+- owners' requests (correction, removal of plate/VIN, photo) are handled with the procedure in the
+  privacy policy, section 7.
+A new contract was to be reconsidered if MyCarBook were to be presented as a reliable history for
+buying and selling (workshops, dealers), or if users grew enough to make manual corrections frequent:
+that is the new version this repository is for.
 
-## Metodo
+## Method
 
-- Prima di ogni correzione, ogni punto è stato riconfermato sul codice a
-  `e38be66` (identico al `main` del 4/11): file e righe sono indicati sotto
-  come **Presente a e38be66**. Le righe di `index.html` coincidono con il
-  report salvo dove indicato.
-- Ogni correzione ha un test negativo che prova il bypass e ne verifica il
-  rifiuto; dove utile anche una controprova che riproduce il problema con la
-  versione precedente.
-  - `backend/test/` (`cd backend && npm test`, 42 test): backend reale
-    (Express) con UP simulate secondo ERC-1271/LSP6 (firma ECDSA di un
-    controller), nodo Kubo e RPC simulati via HTTP.
-  - `tests/frontend/` (jsdom, 22 test) e `tests/e2e/` (14 test): Chromium
-    con una finta estensione UP e una catena simulata, pagine servite da
-    **Nginx reale con il vhost e le intestazioni di `deploy/nginx/`** (TLS
-    self-signed), backend reale dietro Nginx.
-- Nessun deploy di contratti: nessuna correzione lo richiede (le parti che
-  lo richiederebbero sono 📌). Nessuna chiave usata.
-- Non verificabile da qui: la catena e il gateway LUKSO reali (rete della
-  sessione di lavoro bloccata), il VPS e il nodo IPFS. Le procedure da
-  eseguire lì sono in [OPERATIONS.md](OPERATIONS.md).
+- Before each fix, each finding was confirmed again in the code at `e38be66` (identical to `main` on
+  4 November): files and lines are given below as **Present at e38be66**. The lines of `index.html`
+  match the report except where noted.
+- Each fix has a negative test that tries the bypass and checks it is refused; where useful also a
+  counter-test that reproduces the problem with the previous version.
+  - `backend/test/` (`cd backend && npm test`, 47 tests): the real backend (Express) with Universal
+    Profiles simulated as in ERC-1271/LSP6 (ECDSA signature of a controller), Kubo node and RPC
+    simulated over HTTP.
+  - `tests/frontend/` (jsdom, 22 tests) and `tests/e2e/` (14 tests): Chromium with a fake UP extension
+    and a simulated chain, pages served by **real Nginx with the vhost and headers of `deploy/nginx/`**
+    (self-signed TLS), real backend behind Nginx.
+- No contract deployment: no fix needed one (the parts that would are 📌). No key used.
+- Not verifiable from the working session: the real chain and LUKSO gateway (network blocked), the
+  server and the IPFS node. The procedures to run there are in [OPERATIONS.md](OPERATIONS.md).
 
-## Sicurezza
+## Security
 
-- ✅ **MCB-01 — XSS memorizzato tramite metadata del veicolo e marcatore
-  `[doc:]`** (High).
-  Presente a e38be66: `frontend/index.html:1057` (`<img src="${…}"
-  onerror=…>` dentro `card.innerHTML`, riga 1059), `:1548-1551` (la regex
-  del marcatore cattura `"` e finisce in `<a href="${…}">`), `:1562`
-  (`entry.innerHTML`); `escapeHtml` (`:1101`) non codificava le virgolette;
-  nessuna CSP (`:1-35`, e nessuna intestazione dal vivo).
-  Correzione:
-  - tutto il codice è passato da `index.html` a `frontend/js/` (e da
-    `how-it-works.html` / `admin-collection.html`); gli stili in
-    `frontend/css/`; zero script, gestori `on*` e attributi `style` inline;
-  - i dati da catena/IPFS sono resi solo con `createElement` +
-    `textContent`/proprietà (`js/lib/render.js`); `src`/`href` solo da link
-    `ipfs://<CID>` validati (`js/lib/ipfs.js`), altrimenti nessun
-    link/immagine; un marcatore `[doc:]` non valido resta testo;
-  - i riepiloghi usano `html\`…\`` (`js/lib/html.js`): ogni valore è
-    codificato (virgolette comprese) e `innerHTML` accetta solo questi
-    frammenti (controllo statico nei test);
-  - CSP rigida e intestazioni nel vhost: `deploy/nginx/security-headers.conf`
-    (`script-src 'self'`, `style-src 'self'`, `frame-ancestors 'none'`,
-    `object-src 'none'`, `base-uri 'none'`, `form-action 'none'`),
-    `X-Content-Type-Options: nosniff`, `Referrer-Policy`,
-    `X-Frame-Options`, `Permissions-Policy`, HSTS; incluse anche nelle
-    `location` con propri `add_header`.
-  Test: `tests/e2e/xss-csp.test.mjs` (veicolo avvelenato spinto nella UP
-  della vittima, payload del report su icona, `[doc:]` e descrizione: nessuna
-  esecuzione, nessun attributo `on*`; controprova CSP: `onerror`, `<script>`
-  e `javascript:` iniettati vengono bloccati; controprova del template di
-  e38be66 che esegue il payload), `tests/frontend/safe-render.test.mjs`,
-  `tests/frontend/static-checks.test.mjs`, `tests/e2e/flows.test.mjs`
-  (intestazioni sul vhost reale, tre pagine senza violazioni CSP).
-- ✅ **MCB-03 — `/api/pin-json` non autenticato** (Medium).
-  Presente a e38be66: `backend/server.js:174-201` (solo il controllo della
-  chiave `LSP4Metadata`, fino a 1 MB, `:170`).
-  Correzione: firma ERC-1271 obbligatoria anche qui, con il formato comune
-  di MCB-09 (contenuto, nonce, dominio, rete). Due scopi:
-  - `metadata` (mint): qualunque UP, ma **schema rigido**
-    (`backend/lib/metadata-schema.js`): solo i campi che l'app scrive,
-    attributi Brand/Model/Trim/Plate/VIN, lunghezze massime, immagini solo
-    `ipfs://<CID>`, nessuna chiave extra, corpo massimo 32 KB;
-  - `admin` (pannello): solo la chiave admin configurata (punto 3).
-  Il rate limit resta (20/15 min, ora per IP). Viene pinnato esattamente il
-  testo firmato, lo stesso di cui il contratto registra il keccak256.
-  Nota sulla richiesta "chiave admin specifica": `/api/pin-json` serve anche
-  al mint, che è aperto a chiunque per design. Riservarlo alla sola chiave
-  admin avrebbe impedito i mint degli utenti; la chiave admin è quindi
-  richiesta per lo scopo `admin`, mentre per il mint basta la firma della
-  propria UP più lo schema rigido. Se si vuole davvero il pin solo-admin
-  (mint gestiti a mano), è una riga in `lib/app.js`.
-  I pin di mint annullati sono gestiti dalla pulizia degli orfani (MCB-17).
-  Test: `backend/test/pin-json.test.js` (senza firma, controller di
-  un'altra UP, contenuto cambiato dopo la firma, replay, altro dominio,
-  testnet, scaduta/futura, chiavi extra, payload XSS nell'icona, attributo
-  non ammesso, rate limit ancora attivo).
-- ✅ **Punto 3 — Upload admin legati all'owner configurato.**
-  Presente a e38be66: `backend/server.js:42-45` (owner hard-coded nel
-  codice) e `:116-119` + `:97-106`: valeva la firma di qualunque controller
-  della UP owner con permesso SIGN.
-  Correzione (`backend/lib/auth.js`): la UP admin si legge da `.env`
-  (`ADMIN_UP_ADDRESS`, da aggiornare quando l'ownership verrà spostata);
-  se manca, le azioni admin sono disattivate. `ADMIN_SIGNER_ADDRESS`
-  sceglie quali chiavi della UP valgono:
-  - `any` (**scelta in produzione dal 16/11**): qualunque controller della
-    UP owner con permesso SIGN, verificato on-chain da `isValidSignature`
-    tramite il KeyManager, quindi la firma funziona da ogni dispositivo;
-  - un indirizzo: solo quella chiave controller (più restrittivo, da
-    aggiornare a ogni cambio di dispositivo);
-  - vuoto: azioni admin disattivate (un errore di configurazione non apre
-    l'accesso).
-  Motivo della scelta: il legame a una sola chiave protegge solo gli upload
-  admin sul nostro nodo IPFS, non il contratto. Un controller compromesso
-  della UP owner con permessi di chiamata potrebbe comunque usare
-  `setData`/`setDataForTokenId` puntando a file ospitati altrove: quel
-  rischio si gestisce sui permessi dei controller della UP (report
-  generale, GEN-01), non nel backend. Restano in ogni caso la firma legata
-  al contenuto, monouso, solo mainnet e lo schema dei file (MCB-09, MCB-10).
-  Test: `backend/test/admin.test.js` (modalità `any`: altro controller della
-  UP owner accettato; UP diversa → 403; chiave che non è controller della UP
-  owner → 401; senza `ADMIN_UP_ADDRESS` → 403; valore non valido → il
-  server non parte. Modalità indirizzo: altro controller → 403, chiave
-  admin per un'altra UP → 403, chiave tolta dai controller → 401, variabile
-  vuota → 403).
-- ✅ **MCB-02 — Rate limit unico per tutti dietro Nginx** (Medium).
-  Presente a e38be66: `backend/server.js:178-184`, `:214-220`, ascolto su
-  127.0.0.1 (`:254`), nessun `trust proxy`.
-  Correzione: `app.set("trust proxy", "loopback")` (configurabile con
-  `TRUST_PROXY`); il vhost imposta `X-Forwarded-For $remote_addr`.
-  Test: `backend/test/rate-limit.test.js` (un client che esaurisce il limite
-  non blocca gli altri; controprova con la configurazione precedente: blocco
-  globale).
-- ✅ **MCB-09 — Firma degli upload poco vincolata; lista consultabile da
-  chiunque** (Low).
-  Presente a e38be66: `backend/server.js:62-64` (messaggio senza file,
-  nonce, dominio), `:92-95` (riusabile per 5 minuti, rifiuto dell'orologio
-  in anticipo), `:32-35`/`:88` (testnet accettata), `:203-207` (`GET
-  /api/photo-access/:address` pubblica).
-  Correzione: il messaggio firmato contiene dominio, scopo, UP, rete,
-  SHA-256 del contenuto, nonce casuale e istante; il server ricalcola
-  l'impronta del contenuto ricevuto, consuma il nonce (uso singolo),
-  accetta solo `ALLOWED_CHAIN_IDS` (default 42) e un anticipo dell'orologio
-  fino a 60 s. La verifica della lista è `POST /api/photo-access` firmata
-  dalla UP stessa (pulsante "Sei nella lista di accesso? Verifica").
-  Formato identico tra `backend/lib/auth.js` e
-  `frontend/js/lib/auth-message.js` (test dedicato).
-  Test: `backend/test/pin-file.test.js`, `pin-json.test.js`,
-  `photo-access.test.js`, `tests/frontend/logic.test.mjs`.
-- ✅ **MCB-10 — Tipo del file deciso dal client** (Low).
-  Presente a e38be66: `backend/server.js:226-229` (`mimetype` dichiarato).
-  Correzione: tipo ricavato dai primi byte (`backend/lib/files.js`): foto
-  solo JPEG/PNG/WebP, documenti anche PDF; nome e tipo del file pinnato
-  decisi dal server.
-  Test: SVG/HTML dichiarati `image/png` rifiutati, PDF non accettato come
-  foto, nome `../../evil.html` sostituito (`backend/test/pin-file.test.js`).
-  Parte gateway (16/11): verificato dal vivo che `ipfs.chainintegrate.it`
-  non mandava né `nosniff` né CSP. Applicate sul server del nodo le
-  intestazioni di `deploy/nginx/ipfs-gateway-headers.conf`: `nosniff`,
-  `Referrer-Policy: no-referrer` e una CSP senza script (`default-src
-  'none'`, `object-src 'self'` per i PDF in chiaro), prima in Report-Only.
-  Verificati: immagine aperta dal gateway, allegato cifrato scaricato e
-  aperto da Traceability. Da riverificare al primo PDF in chiaro aperto
-  direttamente dal gateway (oggi nessuno su MyCarBook).
-- ✅ **MCB-07 — multer 1.x e body-parser vulnerabili** (Medium).
-  Presente a e38be66: `backend/package-lock.json` (multer `1.4.5-lts.2`,
-  body-parser `1.20.6`, express `4.22.2`); multer prima della verifica
-  della firma (`server.js:222`).
-  Correzione: multer 2.5.0, express 4.22.3, body-parser 1.20.9, qs 6.16.2,
-  proxy-addr 2.0.8; `npm audit`: 0 vulnerabilità. Firma e permessi sono
-  verificati **prima** di leggere il multipart; limiti `files: 1, fields: 0,
-  parts: 1`; ogni errore del parser diventa 4xx.
-  Test: multipart troncato con e senza firma → 4xx e processo vivo, campi
-  extra rifiutati, file oltre 5 MB → 413 (`backend/test/pin-file.test.js`).
-- ⏳ **MCB-13 — API del nodo IPFS in chiaro, protetta solo da filtro IP**
-  (Low).
-  Presente a e38be66: `backend/server.js:15-19`, `backend/.env.example:3`.
-  Fatto: l'indirizzo non è più un default nel codice (`IPFS_API_URL`
-  obbligatorio), supporto a `IPFS_API_AUTH` (autenticazione Kubo
-  `API.Authorizations`), test con nodo che richiede l'intestazione
-  (`backend/test/pins.test.js`). Aperto, **rischio accettato per ora**
-  (16/11): tunnel/TLS tra VPS e nodo. Sul tratto viaggiano solo file
-  destinati a essere pubblici, la porta dell'API non è raggiungibile
-  dall'esterno e il controllo giornaliero segnala i file mancanti; da
-  rivedere se il nodo ospiterà dati riservati (procedura in OPERATIONS.md).
-  L'IP resta nella cronologia git: la protezione vera è il firewall del nodo.
-- 📌 **MCB-08 — Funzioni a pagamento non imposte dal contratto** (Low).
-  Presente a e38be66: `contracts/MyCarBookV2.sol:131-158` e `:91-111`;
-  `how-it-works.html:204/269` ("checked directly on-chain").
-  Il pin sul nostro nodo è già riservato ai livelli giusti (backend). Il
-  testo ora dice che il livello è letto dall'app e che è una comodità
-  dell'app, non una regola del contratto. Limite dei bit di categoria e
-  controllo del livello on-chain: da prevedere nel prossimo contratto.
-  Test: `tests/frontend/static-checks.test.mjs` (frase rimossa).
+- ✅ **MCB-01 — Stored XSS through vehicle metadata and the `[doc:]` marker** (High).
+  Present at e38be66: `frontend/index.html:1057` (`<img src="${…}" onerror=…>` inside
+  `card.innerHTML`, line 1059), `:1548-1551` (the marker's regex captures `"` and ends up in
+  `<a href="${…}">`), `:1562` (`entry.innerHTML`); `escapeHtml` (`:1101`) did not encode quotes; no
+  CSP (`:1-35`, and no header live).
+  Fix:
+  - all code moved from `index.html` to `frontend/js/` (and from `how-it-works.html` /
+    `admin-collection.html`); styles in `frontend/css/`; no inline script, `on*` handler or `style`
+    attribute;
+  - chain/IPFS data is rendered only with `createElement` + `textContent`/properties
+    (`js/lib/render.js`); `src`/`href` only from validated `ipfs://<CID>` links (`js/lib/ipfs.js`),
+    otherwise no link or image; an invalid `[doc:]` marker stays text;
+  - summaries use `html\`…\`` (`js/lib/html.js`): every value is encoded (quotes included) and
+    `innerHTML` accepts only these fragments (static check in the tests);
+  - strict CSP and headers in the vhost: `deploy/nginx/security-headers.conf` (`script-src 'self'`,
+    `style-src 'self'`, `frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'none'`,
+    `form-action 'none'`), `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `X-Frame-Options`,
+    `Permissions-Policy`, HSTS; included also in the `location` blocks with their own `add_header`.
+  Tests: `tests/e2e/xss-csp.test.mjs` (poisoned vehicle pushed into the victim's UP, the report's
+  payloads on icon, `[doc:]` and description: nothing runs, no `on*` attribute; CSP counter-test:
+  injected `onerror`, `<script>` and `javascript:` are blocked; counter-test of the e38be66 template,
+  which runs the payload), `tests/frontend/safe-render.test.mjs`,
+  `tests/frontend/static-checks.test.mjs`, `tests/e2e/flows.test.mjs` (headers on the real vhost,
+  pages without CSP violations).
+- ✅ **MCB-03 — `/api/pin-json` unauthenticated** (Medium).
+  Present at e38be66: `backend/server.js:174-201` (only the `LSP4Metadata` key checked, up to 1 MB,
+  `:170`).
+  Fix: ERC-1271 signature required here too, with the common format of MCB-09 (content, nonce,
+  domain, network). Two purposes:
+  - `metadata` (mint): any UP, but a **strict schema** (`backend/lib/metadata-schema.js`): only the
+    fields the app writes, attributes Brand/Model/Trim/Plate/VIN, maximum lengths, images only
+    `ipfs://<CID>`, no extra key, body at most 32 KB;
+  - `admin` (admin page): only the configured admin UP (item 3).
+  The rate limit stays (20 per 15 min, now per IP). Exactly the signed text is pinned, the same whose
+  keccak256 the contract records.
+  Note on the request for a "specific admin key": `/api/pin-json` also serves the mint, open to anyone
+  by design. Reserving it to the admin key would have blocked users' mints; the admin key is required
+  for the `admin` purpose, while a mint needs the signature of one's own UP plus the strict schema. An
+  admin-only pin (mints handled by hand) is one line in `lib/app.js`.
+  Pins of cancelled mints are handled by the orphan clean-up (MCB-17).
+  Tests: `backend/test/pin-json.test.js` (no signature, controller of another UP, content changed after
+  signing, replay, other domain, testnet, expired/future, extra keys, XSS payload in the icon,
+  attribute not allowed, rate limit still active).
+- ✅ **Item 3 — Admin uploads bound to the configured owner.**
+  Present at e38be66: `backend/server.js:42-45` (owner hard-coded) and `:116-119` + `:97-106`: the
+  signature of any controller of the owner UP with the SIGN permission was enough.
+  Fix (`backend/lib/auth.js`): the admin UP is read from `.env` (`ADMIN_UP_ADDRESS`, to update when
+  ownership moves); if missing, admin actions are disabled. `ADMIN_SIGNER_ADDRESS` chooses which of
+  the UP's keys count:
+  - `any` (**production choice since 16 November**): any controller of the owner UP with the SIGN
+    permission, checked on-chain by `isValidSignature` through the KeyManager, so the signature works
+    from every device;
+  - an address: only that controller key (stricter, to update at every change of device);
+  - empty: admin actions disabled (a configuration mistake does not open access).
+  Why: binding to a single key protects only the admin uploads on ChainIntegrate's IPFS node, not the
+  contract. A compromised controller of the owner UP with call permissions could still use
+  `setData`/`setDataForTokenId` pointing to files hosted elsewhere: that risk is handled on the UP's
+  controller permissions (general report, GEN-01), not in the backend. The signature bound to the
+  content, single use, mainnet only, and the file checks stay in any case (MCB-09, MCB-10).
+  Tests: `backend/test/admin.test.js` (`any` mode: another controller of the owner UP accepted;
+  different UP → 403; key that is not a controller of the owner UP → 401; no `ADMIN_UP_ADDRESS` →
+  403; invalid value → the server does not start. Address mode: another controller → 403, admin key
+  for another UP → 403, key removed from the controllers → 401, empty variable → 403).
+- ✅ **MCB-02 — One rate-limit bucket for everyone behind Nginx** (Medium).
+  Present at e38be66: `backend/server.js:178-184`, `:214-220`, listening on 127.0.0.1 (`:254`), no
+  `trust proxy`.
+  Fix: `app.set("trust proxy", "loopback")` (configurable with `TRUST_PROXY`); the vhost sets
+  `X-Forwarded-For $remote_addr`.
+  Tests: `backend/test/rate-limit.test.js` (a client using up the limit does not block the others;
+  counter-test with the previous configuration: global block).
+- ✅ **MCB-09 — Loosely bound upload signature; list readable by anyone** (Low).
+  Present at e38be66: `backend/server.js:62-64` (message without file, nonce, domain), `:92-95`
+  (reusable for 5 minutes, clocks running ahead refused), `:32-35`/`:88` (testnet accepted),
+  `:203-207` (public `GET /api/photo-access/:address`).
+  Fix: the signed message holds domain, purpose, UP, network, SHA-256 of the content, a random nonce
+  and the time; the server recomputes the fingerprint of the content received, consumes the nonce
+  (single use), accepts only `ALLOWED_CHAIN_IDS` (default 42) and a clock up to 60 s ahead. The list
+  check is a `POST /api/photo-access` signed by the UP itself ("Are you on the access list? Check"
+  button). Same format in `backend/lib/auth.js` and `frontend/js/lib/auth-message.js` (dedicated test).
+  Tests: `backend/test/pin-file.test.js`, `pin-json.test.js`, `photo-access.test.js`,
+  `tests/frontend/logic.test.mjs`.
+- ✅ **MCB-10 — File type decided by the client** (Low).
+  Present at e38be66: `backend/server.js:226-229` (declared `mimetype`).
+  Fix: type taken from the first bytes (`backend/lib/files.js`): photos only JPEG/PNG/WebP, documents
+  also PDF; name and type of the pinned file decided by the server.
+  Tests: SVG/HTML declared `image/png` refused, PDF not accepted as a photo, name `../../evil.html`
+  replaced (`backend/test/pin-file.test.js`).
+  Gateway part (16 November): checked live that `ipfs.chainintegrate.it` sent neither `nosniff` nor a
+  CSP. Applied on the node's server the headers of `deploy/nginx/ipfs-gateway-headers.conf`:
+  `nosniff`, `Referrer-Policy: no-referrer` and a CSP without scripts (`default-src 'none'`,
+  `object-src 'self'` for plain PDFs), first in Report-Only. Checked: an image opened from the
+  gateway, an encrypted attachment downloaded and opened by Traceability. To check again with the
+  first plain PDF opened straight from the gateway (none on MyCarBook today).
+- ✅ **MCB-07 — Vulnerable multer 1.x and body-parser** (Medium).
+  Present at e38be66: `backend/package-lock.json` (multer `1.4.5-lts.2`, body-parser `1.20.6`, express
+  `4.22.2`); multer ran before the signature check (`server.js:222`).
+  Fix: multer 2.5.0, express 4.22.3, body-parser 1.20.9, qs 6.16.2, proxy-addr 2.0.8; `npm audit`: 0
+  vulnerabilities. Signature and permissions are checked **before** reading the multipart; limits
+  `files: 1, fields: 0, parts: 1`; every parser error becomes a 4xx.
+  Tests: truncated multipart with and without signature → 4xx and the process alive, extra fields
+  refused, file over 5 MB → 413 (`backend/test/pin-file.test.js`).
+- ⏳ **MCB-13 — IPFS node API in clear, protected only by an IP filter** (Low).
+  Present at e38be66: `backend/server.js:15-19`, `backend/.env.example:3`.
+  Done: the address is no longer a default in the code (`IPFS_API_URL` required), support for
+  `IPFS_API_AUTH` (Kubo `API.Authorizations`), test with a node requiring the header
+  (`backend/test/pins.test.js`). Open, **accepted risk for now** (16 November): tunnel/TLS between
+  server and node. Only files meant to be public travel on the link, the API port is not reachable
+  from outside and the daily check reports missing files; to review if the node is to hold private
+  data (procedure in OPERATIONS.md). The IP stays in the git history: the real protection is the
+  node's firewall.
+- 📌 **MCB-08 — Paid features not enforced by the contract** (Low).
+  Present at e38be66: `contracts/MyCarBookV2.sol:131-158` and `:91-111`; `how-it-works.html:204/269`
+  ("checked directly on-chain").
+  Pinning on ChainIntegrate's node is already reserved to the right tiers (backend). The text now says
+  the tier is read by the app and is a convenience of the app, not a rule of the contract. Limiting
+  the category bits and checking the tier on-chain: for the next contract.
+  Tests: `tests/frontend/static-checks.test.mjs` (sentence removed).
 
 ## Privacy
 
-- ✅ **MCB-05 — "Visibili solo a te"; nessun avviso su targa e VIN; nessuna
-  informativa** (Medium; High nel secondo report).
-  Presente a e38be66: `frontend/index.html:368`, `:547` (EN), `:655` (IT);
-  campi targa/VIN `:403-409` senza avviso; nessun link a un'informativa.
-  Fatto:
-  - testo corretto in IT ed EN ("…è pubblico e permanente: chiunque può
-    leggerlo, non solo tu"); `og:description` non dice più "no backend";
-  - accanto a targa e VIN: avviso che sono facoltativi, pubblici e
-    permanenti, collegabili alla UP, con il consiglio di lasciarli vuoti; se
-    uno dei due è compilato serve la casella di presa d'atto, altrimenti il
-    riepilogo non si apre;
-  - sotto la descrizione dell'intervento: avviso che data, km, importo e
-    descrizione sono pubblici e permanenti e di non scrivere dati personali;
-  - "Come funziona": elenco di cosa è pubblico, cosa si può e non si può
-    cancellare, contatto; link "Dati e privacy" a piè di pagina;
-  - inventario dei campi e proposta di riduzione: [PRIVACY.md](PRIVACY.md).
-  - informativa sulla privacy in `frontend/privacy.html` (IT/EN, 16/11),
-    con la stessa impostazione di quella di ChainIntegrate Account
-    (up-onboarding): titolare, cosa è pubblico, cosa riceve e conserva
-    ChainIntegrate e per quanto, terze parti, correzioni e cancellazione
-    (cosa si può fare e cosa no), diritti; collegata dal piè di pagina
-    dell'app e da "Come funziona".
-  La guida su www.chainintegrate.it è stata corretta e pubblicata il 16/11.
-  Test: `tests/e2e/flows.test.mjs` (mint con targa senza presa d'atto:
-  nessun riepilogo, nessuna firma; testo servito), `static-checks`.
-- ✅ **MCB-06 — Foto e documenti pinnati con EXIF/GPS** (Medium).
-  Presente a e38be66: `frontend/index.html:1255-1290` (foto originale,
-  `formData.append("image", file)` a `:1272`), `:1299-1325` (documento);
-  backend inoltra i byte invariati (`server.js:243-244`).
-  Correzione: foto e documenti-immagine ricodificati nel browser con un
-  `<canvas>` (`js/lib/image.js`: via EXIF, GPS, dati fotocamera); il backend
-  **rifiuta** JPEG/PNG/WebP che contengono ancora EXIF/XMP/IPTC/testo
-  (anche dal pannello admin, che ora ricodifica). PDF: non ripulibili nel
-  browser, l'avviso lo dice esplicitamente. Upload dopo la conferma
-  dell'utente (già così); i pin dei mint/interventi annullati vengono tolti
-  dalla pulizia degli orfani (MCB-17). Errore di upload del documento: ora
-  blocca il salvataggio con il messaggio giusto (prima diceva "foto").
-  Test: JPEG con EXIF GPS rifiutato (`backend/test/pin-file.test.js`); in
-  Chromium una foto con EXIF GPS viene caricata ripulita
-  (`tests/e2e/flows.test.mjs`).
-  ⏳ `Reprovider.Strategy` del nodo: da valutare sul nodo (OPERATIONS.md).
-- ✅ **MCB-04 (testi) — "Nulla viene mai cancellato o sovrascritto"**
-  (Medium).
-  Presente a e38be66: `how-it-works.html:194` (EN), `:259` (IT), `:216/:281`
+- ✅ **MCB-05 — "Visible only to you"; no notice on plate and VIN; no privacy policy** (Medium; High
+  in the second report).
+  Present at e38be66: `frontend/index.html:368`, `:547` (EN), `:655` (IT); plate/VIN fields
+  `:403-409` without notice; no link to a privacy policy.
+  Done:
+  - text corrected in IT and EN ("…is public and permanent: anyone can read it, not only you");
+    `og:description` no longer says "no backend";
+  - next to plate and VIN: a notice that they are optional, public and permanent, linkable to the UP,
+    with the advice to leave them empty; when either is filled, the acknowledgement box is required,
+    otherwise the summary does not open;
+  - under the entry's description: a notice that date, mileage, amount and description are public and
+    permanent, and not to write personal data;
+  - "How it works": the list of what is public, what can and cannot be deleted, contact; a "Data and
+    privacy" link in the footer;
+  - field inventory and reduction proposal: [PRIVACY.md](PRIVACY.md);
+  - privacy policy in `frontend/privacy.html` (IT/EN, 16 November), with the same structure as the
+    ChainIntegrate Account policy (up-onboarding): controller, what is public, what ChainIntegrate
+    receives and keeps and for how long, third parties, corrections and deletion (what can and cannot
+    be done), rights; linked from the app's footer and from "How it works".
+  The guide on www.chainintegrate.it was corrected and published on 16 November.
+  Tests: `tests/e2e/flows.test.mjs` (mint with a plate and no acknowledgement: no summary, no
+  signature; text served), `static-checks`.
+- ✅ **MCB-06 — Photos and documents pinned with EXIF/GPS** (Medium).
+  Present at e38be66: `frontend/index.html:1255-1290` (original photo, `formData.append("image",
+  file)` at `:1272`), `:1299-1325` (document); the backend forwarded the bytes unchanged
+  (`server.js:243-244`).
+  Fix: photos and image documents re-encoded in the browser with a `<canvas>` (`js/lib/image.js`: no
+  EXIF, GPS, camera data); the backend **refuses** JPEG/PNG/WebP still holding EXIF/XMP/IPTC/text
+  (also from the admin page, which now re-encodes). PDFs cannot be cleaned in the browser: the notice
+  says so. Upload after the user's confirmation (already so); pins of cancelled mints/entries are
+  removed by the orphan clean-up (MCB-17). Document upload error: it now stops the save with the right
+  message (it used to say "photo").
+  Tests: JPEG with EXIF GPS refused (`backend/test/pin-file.test.js`); in Chromium a photo with EXIF
+  GPS is uploaded cleaned (`tests/e2e/flows.test.mjs`).
+  ⏳ The node's `Reprovider.Strategy`: to evaluate on the node (OPERATIONS.md).
+- ✅ **MCB-04 (texts) — "Nothing is ever deleted or overwritten"** (Medium).
+  Present at e38be66: `how-it-works.html:194` (EN), `:259` (IT), `:216/:281`
   ("tamper-proof"/"non falsificabile"), `README.md:119-122`.
-  Fatto: "Come funziona" ha la sezione "Chi può modificare cosa": voci di
-  intervento immodificabili da chiunque; date e km iniziali immodificabili;
-  dati del veicolo (nome, marca, modello, allestimento, targa, VIN, foto)
-  non modificabili dal proprietario, ma sostituibili dall'account
-  ChainIntegrate che gestisce il contratto, per qualunque veicolo. Stesso
-  avviso nel README e nel pannello admin.
-  📌 Il potere dell'owner e l'impossibilità per il proprietario di
-  correggere i propri dati restano (decisione del 16/11). Lo stesso potere
-  è la procedura per le richieste del proprietario: scheda nuova, corretta
-  o senza targa/VIN, e scheda vecchia tolta dal nodo; il riferimento resta
-  nello storico della catena (informativa, punto 7).
-  Test: `static-checks` (frasi rimosse).
+  Done: "How it works" has a "Who can change what" section: service entries changeable by no one;
+  dates and starting mileage changeable by no one; vehicle data (name, brand, model, trim, plate, VIN,
+  photo) not changeable by the owner, but replaceable by the ChainIntegrate account that manages the
+  contract, for any vehicle. Same notice in the README and in the admin page.
+  📌 The owner's power, and the owner of a vehicle being unable to correct their own data, stay
+  (decision of 16 November). The same power is the procedure for owners' requests: a new record,
+  corrected or without plate/VIN, and the old record removed from the node; the reference stays in the
+  chain's history (privacy policy, section 7).
+  Tests: `static-checks` (sentences removed).
 
-## Funzionalità e affidabilità
+## Functionality and reliability
 
-- ✅ **MCB-17 — Dati dei veicoli non presenti sul nodo IPFS proprio**
-  (Medium).
-  Presente a e38be66: `frontend/index.html:1028-1031` (nodo proprio, poi
-  gateway LUKSO in silenzio); verifica dal vivo del 4/11: 3 metadata e 2
-  foto solo sul gateway LUKSO.
-  Fatto:
-  - `backend/scripts/check-pins.js`: raccoglie dalla catena tutti i CID
-    referenziati (metadata di collezione e di ogni veicolo, anche le versioni
-    sostituite, immagini citate, documenti `[doc:]`), controlla che siano
-    pinnati sul nodo; `--repin` li ripinna dalla rete IPFS o, in mancanza,
-    importando un CAR dal gateway di riserva (Kubo verifica ogni blocco; un
-    CAR con radice diversa viene scartato); `--gc-orphans [--apply]` toglie
-    i pin caricati dal backend e mai usati sul contratto dopo 48 h, solo se
-    l'elenco dei CID è completo;
-  - `backend/scripts/backup-ipfs.sh`: esporta i CAR di tutti i CID con
-    manifest SHA-256 e li copia fuori dal VPS (`BACKUP_REMOTE`, rclone o
-    rsync); unità systemd giornaliera/settimanale in `deploy/systemd/`;
-  - il backend registra i CID che pinna (`data/pins.jsonl`, senza
-    indirizzi).
-  Test: `backend/test/pins.test.js` (file mancante segnalato e uscita 1,
-  CAR con radice sbagliata rifiutato, orfani: mai i referenziati, mai con
-  elenco incompleto, mai i recenti; manifest; CLI completa con RPC e Kubo
-  simulati).
-  Eseguito sul VPS il 16/11: 9 CID referenziati dal contratto, 8 mancanti
-  (caricati ai tempi di Pinata: metadata della collezione e dei 3 veicoli,
-  2 immagini di collezione, 2 foto di veicoli), tutti ripinnati; controllo
-  successivo: tutti presenti. Attivo il controllo giornaliero con ripin
-  automatico (`mycarbook-check-pins.timer`).
-  ⏳ Backup fuori server: rimandato per scelta (pochi utenti). Fino ad
-  allora i file stanno sul nodo proprio e su Pinata (da non chiudere prima
-  del backup). Il backup contiene schede veicolo con targa/VIN: la
-  destinazione deve essere privata.
-  ⏳ Il gateway LUKSO di riserva resta nel frontend e nella CSP come rete di
-  sicurezza; si può togliere dopo un periodo senza file mancanti.
-- ✅ **MCB-11 — Veicoli "spinti" da terzi, lista che si rompe, nessun
-  trasferimento** (Low).
-  Presente a e38be66: `frontend/index.html:973-1003` (un errore su un token
-  interrompe tutta la lista), `:1110-1112` (`.replace` su un'icona non
-  stringa), ABI senza `transfer` (`config.js:22-34`), `how-it-works.html:199`.
-  Fatto: lettura difensiva di ogni token (`js/lib/metadata.js`), un token
-  malformato viene saltato o mostrato senza nome; "Nascondi dalla mia lista"
-  (preferenza locale) con "Mostra veicoli nascosti"; "Trasferisci
-  all'acquirente" con LSP8 `transfer(…, force=false)` (solo verso UP o
-  contratti che accettano LSP8), indirizzo validato.
-  📌 Impedire l'invio non richiesto (`force=true`) richiederebbe un nuovo
-  contratto: accettato (finora nessun trasferimento sul contratto).
-  Test: `tests/e2e/xss-csp.test.mjs` (token malformato non rompe la lista),
-  `tests/e2e/flows.test.mjs` (nascondi/mostra; trasferimento: indirizzo non
-  valido, proprio o del contratto rifiutati, poi `force=false`),
-  `tests/frontend/logic.test.mjs`.
-- ✅ **MCB-12 — Km sbagliati permanenti; dati autodichiarati presentati
-  come verificati** (Low).
-  Presente a e38be66: `contracts/MyCarBookV2.sol:150-152`;
-  `how-it-works.html:216/281`.
-  Fatto: km solo interi fino a 2.000.000; un salto di oltre 100.000 km
-  rispetto al massimo registrato richiede una conferma esplicita; nel
-  dettaglio "Dati inseriti dai proprietari del veicolo, non verificati da
-  nessuno"; testi senza "tamper-proof". 📌 Limite on-chain, correzione dei
-  km e avviso "stesso VIN su altri token": nuovo contratto o indicizzatore.
-  Test: `tests/e2e/flows.test.mjs` (km fuori scala rifiutati; salto grande
-  senza conferma: nessuna transazione), `tests/frontend/logic.test.mjs`.
-- ✅ **MCB-14 — Storico riletto da capo a ogni visualizzazione** (Low).
-  Presente a e38be66: `frontend/index.html:1489-1532`, ricarica al cambio
-  lingua `:814`, dopo ogni voce `:1687`.
-  Fatto: lettura incrementale con memoria per sessione
-  (`js/lib/log-cache.js`): il cambio lingua ridisegna senza letture, dopo
-  una nuova voce si leggono solo i blocchi nuovi. ⏳ Prima apertura ancora
-  dal blocco di deploy (indicizzatore: da valutare).
-  Test: `tests/e2e/flows.test.mjs` (cambio lingua: zero `eth_getLogs`),
+- ✅ **MCB-17 — Vehicle data not on ChainIntegrate's own IPFS node** (Medium).
+  Present at e38be66: `frontend/index.html:1028-1031` (own node, then LUKSO's gateway, silently);
+  live check of 4 November: 3 metadata files and 2 photos only on LUKSO's gateway.
+  Done:
+  - `backend/scripts/check-pins.js`: collects from the chain every referenced CID (collection metadata
+    and every vehicle's, replaced versions included, images cited, `[doc:]` documents), checks they
+    are pinned on the node; `--repin` re-pins them from the IPFS network or, failing that, by
+    importing a CAR from the fallback gateway (Kubo checks every block; a CAR with a different root is
+    discarded); `--gc-orphans [--apply]` removes the pins uploaded by the backend and never used on the
+    contract after 48 h, only when the CID list is complete;
+  - `backend/scripts/backup-ipfs.sh`: exports the CARs of every CID with a SHA-256 manifest and copies
+    them off the server (`BACKUP_REMOTE`, rclone or rsync); daily/weekly systemd units in
+    `deploy/systemd/`;
+  - the backend logs the CIDs it pins (`data/pins.jsonl`, no addresses).
+  Tests: `backend/test/pins.test.js` (missing file reported with exit code 1, CAR with a wrong root
+  refused, orphans: never the referenced ones, never with an incomplete list, never the recent ones;
+  manifest; full CLI with simulated RPC and Kubo).
+  Run on the server on 16 November: 9 CIDs referenced by the contract, 8 missing (uploaded at Pinata's
+  time: collection metadata and the 3 vehicles', 2 collection images, 2 vehicle photos), all
+  re-pinned; next check: all present. Daily check with automatic re-pin on
+  (`mycarbook-check-pins.timer`).
+  ⏳ Off-server backup: postponed by choice (few users). Until then the files are on the own node and
+  on Pinata (not to be closed before the backup). The backup holds vehicle records with plate/VIN: the
+  destination must be private.
+  ⏳ LUKSO's fallback gateway stays in the frontend and in the CSP as a safety net; it can be removed
+  after a period without missing files.
+- ✅ **MCB-11 — Vehicles "pushed" by third parties, list breaking, no transfer** (Low).
+  Present at e38be66: `frontend/index.html:973-1003` (an error on one token stopped the whole list),
+  `:1110-1112` (`.replace` on an icon that is not a string), ABI without `transfer`
+  (`config.js:22-34`), `how-it-works.html:199`.
+  Done: defensive reading of each token (`js/lib/metadata.js`), a malformed token is skipped or shown
+  without a name; "Hide from my list" (local preference) with "Show hidden vehicles"; "Transfer to the
+  buyer" with LSP8 `transfer(…, force=false)` (only to UPs or contracts accepting LSP8), address
+  validated.
+  📌 Preventing unsolicited sends (`force=true`) would need a new contract: accepted (no transfer on
+  the contract so far).
+  Tests: `tests/e2e/xss-csp.test.mjs` (a malformed token does not break the list),
+  `tests/e2e/flows.test.mjs` (hide/show; transfer: invalid, own or contract address refused, then
+  `force=false`), `tests/frontend/logic.test.mjs`.
+- ✅ **MCB-12 — Wrong mileage permanent; self-declared data presented as verified** (Low).
+  Present at e38be66: `contracts/MyCarBookV2.sol:150-152`; `how-it-works.html:216/281`.
+  Done: mileage only whole numbers up to 2,000,000; a jump of more than 100,000 km over the highest
+  recorded needs an explicit confirmation; in the detail view "Data entered by the vehicle's owners,
+  not verified by anyone"; texts without "tamper-proof". 📌 An on-chain limit, mileage correction and
+  a "same VIN on other tokens" warning: new contract or indexer.
+  Tests: `tests/e2e/flows.test.mjs` (out-of-range mileage refused; large jump without confirmation: no
+  transaction), `tests/frontend/logic.test.mjs`.
+- ✅ **MCB-14 — History read again from the start at every view** (Low).
+  Present at e38be66: `frontend/index.html:1489-1532`, reload at language switch `:814`, after each
+  entry `:1687`.
+  Done: incremental reading with a per-session memory (`js/lib/log-cache.js`): the language switch
+  redraws without reading, after a new entry only the new blocks are read. ⏳ The first opening still
+  reads from the deployment block (an indexer: to evaluate).
+  Tests: `tests/e2e/flows.test.mjs` (language switch: zero `eth_getLogs`),
   `tests/frontend/logic.test.mjs`.
 
-## Dipendenze e build
+## Dependencies and build
 
-- ✅ **MCB-16 — Terze parti (Google Fonts, jsDelivr, esm.sh) senza SRI né
-  CSP** (Info).
-  Presente a e38be66: `frontend/index.html:28-33`, `:537`;
-  `admin-collection.html:8`, `:66`; `how-it-works.html:25-27`.
-  Fatto: font (Oswald, Inter, JetBrains Mono, latin/latin-ext) in
-  `frontend/fonts/`, ethers 6.13.4 (stesso file npm) e erc725.js 0.28.2
-  (bundle ESM) in `frontend/vendor/`, impronte in `vendor/SHA256SUMS`,
-  `integrity` sugli script, rigenerabili con `cd tests && npm run vendor`.
-  Resta solo il gateway LUKSO di riserva (MCB-17) e l'RPC dell'estensione
-  UP dell'utente. ⏳ Backend: usa ancora l'RPC pubblico LUKSO
-  (`RPC_URL_42` per puntare al nodo proprio).
-  Test: in Chromium nessuna richiesta fuori dal sito e dai due gateway; font
-  caricati; impronte e `integrity` verificate (`static-checks`).
-- ✅ **MCB-15 — `package.json` della radice sovrascritto, `ethers` mancante
-  nel backend** (Info).
-  Presente a e38be66: `package.json` = manifest del backend (da `7aea9a5`),
-  `backend/package.json:10-16` senza `ethers` e con "Proxy verso Pinata".
-  Fatto: ripristinato il manifest Hardhat (`b55890c`): `npm ci` alla radice
-  torna coerente con il lockfile; il contratto compila (solc 0.8.27, 0
-  errori). `backend/package.json` con `ethers`, descrizione aggiornata,
-  script di test.
-- ➖ **Dipendenze dev della radice** (109 avvisi, solo strumenti Hardhat
-  non deployati): non toccate. `tests/` (solo sviluppo): `ws` tramite
-  ethers/jsdom lato Node, non incluso nei file serviti al browser.
+- ✅ **MCB-16 — Third parties (Google Fonts, jsDelivr, esm.sh) without SRI or CSP** (Info).
+  Present at e38be66: `frontend/index.html:28-33`, `:537`; `admin-collection.html:8`, `:66`;
+  `how-it-works.html:25-27`.
+  Done: fonts (Oswald, Inter, JetBrains Mono, latin/latin-ext) in `frontend/fonts/`, ethers 6.13.4 (the
+  same npm file) and erc725.js 0.28.2 (ESM bundle) in `frontend/vendor/`, fingerprints in
+  `vendor/SHA256SUMS`, `integrity` on the scripts, rebuilt with `cd tests && npm run vendor`. Only
+  LUKSO's fallback gateway (MCB-17) and the RPC of the user's UP extension remain. ⏳ The backend still
+  uses LUKSO's public RPC (`RPC_URL_42` to point to ChainIntegrate's own node).
+  Tests: in Chromium no request outside the site and the two gateways; fonts loaded; fingerprints and
+  `integrity` checked (`static-checks`).
+- ✅ **MCB-15 — Root `package.json` overwritten, `ethers` missing in the backend** (Info).
+  Present at e38be66: `package.json` = the backend's manifest (since `7aea9a5`),
+  `backend/package.json:10-16` without `ethers` and with "Proxy verso Pinata".
+  Done: the Hardhat manifest restored (`b55890c`): `npm ci` at the root matches the lockfile again; the
+  contract compiles (solc 0.8.27, 0 errors). `backend/package.json` with `ethers`, updated
+  description, test script.
+- ➖ **Root dev dependencies** (109 advisories, Hardhat tooling only, not deployed): not touched.
+  `tests/` (development only): `ws` through ethers/jsdom on the Node side, not in the files served to
+  the browser.
 
-## Rilascio
+## Release
 
-Rilascio del 16/11/2026 sul VPS (dettagli in [OPERATIONS.md](OPERATIONS.md)):
+Release of 16 November 2026 on the server (details in [OPERATIONS.md](OPERATIONS.md)); pull request
+numbers are MyCarBook's:
 
-1. ✅ codice aggiornato a `main` (merge della PR #1);
-2. ✅ backend: `npm ci` (0 vulnerabilità), nuove variabili in `.env`
-   (`IPFS_API_URL`, `AUTH_DOMAIN`, `ALLOWED_CHAIN_IDS=42`, `TRUST_PROXY`,
-   `ADMIN_UP_ADDRESS`), riavvio PM2; `/api/health` OK;
-3. ✅ vhost Nginx: snippet delle intestazioni incluso solo nel blocco di
-   mycarbook (gli altri siti del file condiviso non cambiano),
-   `X-Forwarded-For`, file di servizio a 404. CSP verificata prima in
-   Report-Only con l'estensione UP (nessuna violazione), poi applicata;
-4. ✅ ripin dei file sul nodo e controllo giornaliero attivo (MCB-17);
-5. ✅ `ADMIN_SIGNER_ADDRESS=any` (PR #2): upload admin attivi per la UP
-   owner da qualunque suo controller con permesso SIGN;
-6. ✅ informativa sulla privacy (`privacy.html`): online con il
-   `git pull` successivo;
-7. registri tecnici al massimo 30 giorni, come dice l'informativa: Nginx
-   ruota già i log (14 giorni, default Ubuntu); per i log di PM2 serve
-   `pm2-logrotate` (OPERATIONS.md, §5);
-8. ✅ guida su www.chainintegrate.it aggiornata;
-9. ✅ intestazioni di sicurezza sul gateway `ipfs.chainintegrate.it`
-   (MCB-10 / GEN-03), CSP prima in Report-Only poi applicata;
-10. ⏳ backup fuori server (rimandato).
+1. ✅ code updated to `main` (merge of PR #1);
+2. ✅ backend: `npm ci` (0 vulnerabilities), new variables in `.env` (`IPFS_API_URL`, `AUTH_DOMAIN`,
+   `ALLOWED_CHAIN_IDS=42`, `TRUST_PROXY`, `ADMIN_UP_ADDRESS`), PM2 restart; `/api/health` OK;
+3. ✅ Nginx vhost: header snippet included only in MyCarBook's block (the other sites of the shared
+   file unchanged), `X-Forwarded-For`, service files answer 404. CSP checked first in Report-Only with
+   the UP extension (no violation), then enforced;
+4. ✅ files re-pinned on the node and daily check on (MCB-17);
+5. ✅ `ADMIN_SIGNER_ADDRESS=any` (PR #2): admin uploads on for the owner UP from any of its controllers
+   with the SIGN permission;
+6. ✅ privacy policy (`privacy.html`, PR #4) online;
+7. ✅ technical logs kept at most 30 days, as the policy says: Nginx already rotates its logs (14 days,
+   Ubuntu default); PM2 logs with `pm2-logrotate` (OPERATIONS.md, §5);
+8. ✅ guide on www.chainintegrate.it updated;
+9. ✅ security headers on the gateway `ipfs.chainintegrate.it` (MCB-10 / GEN-03), CSP first in
+   Report-Only then enforced (PR #5);
+10. ⏳ off-server backup (postponed).
