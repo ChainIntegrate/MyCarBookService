@@ -137,3 +137,40 @@ sudo pm2 save
 ```
 
   To clear MyCarBook's old logs at once: `sudo pm2 flush mycarbook-backend`.
+
+## 6. Deploying the MyCarBook Service contracts
+
+`scripts/deploy-service.js` deploys `ServiceRegistryFactory` and `VehicleRegistry`, links them, sets the
+arbiter if given, writes `LSP4Creators[]` naming ChainIntegrate's Universal Profile on the vehicle
+registry, and hands ownership of both to that profile. Testnet first.
+
+On the server (a clone of this repository):
+
+```bash
+cd /var/www/mycarbook-service && git pull --ff-only origin main && npm ci && npm test
+```
+
+A new key, used only to pay the deployment (it keeps no power afterwards): create it on the server, fund
+it with a little LYX (testnet: LUKSO's faucet), and keep it out of the shell history (a leading space
+with `HISTCONTROL=ignorespace`, or a `.env` readable only by its user):
+
+```bash
+node -e 'const w=require("ethers").Wallet.createRandom();console.log(w.address);console.log(w.privateKey)'
+```
+
+```bash
+ DEPLOYER_KEY=0x… OWNER_UP=0x… ARBITER=0x… npm run deploy:testnet
+```
+
+It prints the addresses and writes `deployments/luksoTestnet.json` (commit it). On mainnet:
+`npx hardhat run --network luksoMainnet scripts/deploy-service.js` with `CONFIRM_MAINNET=yes`.
+
+Afterwards, from ChainIntegrate's Universal Profile:
+- add the vehicle registry to `LSP12IssuedAssets[]`, so that Universal Everything shows ChainIntegrate as
+  a verified creator;
+- set the arbiter (`setArbiter`) if it was not given;
+- create the first business register with `createRegistry` on the factory.
+
+Verification of the source on LUKSO's explorer: `npx hardhat verify --network luksoTestnet <address>
+<constructor arguments>` (the factory: the deployer's address; the vehicle registry: name, symbol,
+deployer, factory).

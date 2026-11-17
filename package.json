@@ -1,27 +1,32 @@
 {
-  "name": "mycarbook",
+  "name": "mycarbook-service",
   "version": "1.0.0",
-  "description": "Storico manutenzioni veicolo on-chain su LUKSO. Mint libero (ogni utente minta il proprio veicolo), nessuna cifratura (dato pubblico per natura della chain — coerente con l'uso in fase di rivendita).",
+  "description": "MyCarBook Service: vehicle history on LUKSO for owners and the automotive chain (contracts, Hardhat).",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:testnet": "hardhat run --network luksoTestnet scripts/deploy-service.js"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ChainIntegrate/MyCarBook.git"
+    "url": "git+https://github.com/ChainIntegrate/MyCarBookService.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/ChainIntegrate/MyCarBook/issues"
+    "url": "https://github.com/ChainIntegrate/MyCarBookService/issues"
   },
-  "homepage": "https://github.com/ChainIntegrate/MyCarBook#readme",
+  "homepage": "https://github.com/ChainIntegrate/MyCarBookService#readme",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/contracts": "^4.9.6",
+    "@openzeppelin/contracts-upgradeable": "^4.9.6",
     "dotenv": "^17.4.2",
-    "hardhat": "^2.29.0"
+    "hardhat": "^2.29.0",
+    "solc": "^0.8.28"
   },
   "dependencies": {
     "@lukso/lsp4-contracts": "^0.17.3",
