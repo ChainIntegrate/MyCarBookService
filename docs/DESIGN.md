@@ -106,11 +106,18 @@ service authorization replace it.
 - Issued by anyone: the owner, or a dealer or manufacturer (from their register's account). The token
   records **who issued it and with which role**; one issued by a verified dealer or manufacturer counts
   more than one created by a private person.
-- **One verified vehicle per `vehicleId`.** A private token does not lock the VIN: a token issued by a
-  verified business, or a claim proven to ChainIntegrate (the registration document), takes precedence,
-  and the private token is marked as superseded in the history. A token issued by a verified business
-  cannot be displaced by a private one. Disputes are handled by ChainIntegrate with a documented
-  procedure.
+- **One verified vehicle per `vehicleId`** (decision of 18 November 2026). A private token does not
+  lock the VIN:
+  - a token issued by a **verified business** (a register of the factory) on the same `vehicleId`
+    supersedes the private ones **automatically**; the private token is marked "superseded" in the
+    history, not deleted;
+  - between private people (or when a business got the VIN wrong), **ChainIntegrate decides** after a
+    check (e.g. the registration document), with a dedicated **arbiter key**: it can mark a token as
+    superseded or restore it, and each decision stays in the history. It has no access to any data;
+  - a token issued by a verified business cannot be displaced by a private one;
+  - **two verified tokens on the same `vehicleId`**: the second is accepted but marked **"in
+    conflict"**, both are shown until ChainIntegrate resolves it with the arbiter key. Rare enough not to
+    justify an automatic rule that could be wrong.
 - **Transfer in two steps** (offer, accept): no more vehicles pushed into someone else's account (V2
   MCB-11).
 - **No owner power over records.** The contract owner cannot rewrite a vehicle's data (V2 MCB-04). The
@@ -120,10 +127,10 @@ service authorization replace it.
 
 ### 4.3 Owner entries (personal logbook)
 
-- What V2 has, encrypted: date, mileage, categories, amount, description, attached document.
-- On-chain: the `vehicleId`, a fingerprint of the encrypted entry, the time, the owner's account and the
-  categories bitmask (same values as V2, so statistics need no conversion). Whether categories and
-  mileage should be public is an open point (section 11).
+- What V2 has, all encrypted: date, mileage, categories (same bitmask values as V2), amount,
+  description, attached document.
+- On-chain: the `vehicleId`, a fingerprint of the encrypted entry, the time, the owner's account and a
+  **mileage commitment** (section 4.7).
 - Mileage: whole numbers up to 2,000,000; a large jump needs an explicit confirmation (as in V2).
 
 ### 4.4 Professional records (business side)
@@ -131,14 +138,15 @@ service authorization replace it.
 - **One record = one LSP8 token in the business's register**, held by the business and **not
   transferable**: it is the business's professional receipt and does not follow the car at resale (the
   history does, through the `vehicleId`).
-- On-chain: `vehicleId`, the business (its register), who signed (the operator), date, categories,
-  a fingerprint of the encrypted content, and the mileage **read** at the service (see below).
-- Encrypted (register's data key, section 5): description, parts, amount, documents, photos.
+- On-chain: `vehicleId`, the business (its register), who signed (the operator), the date, a
+  fingerprint of the encrypted content and a **mileage commitment** (section 4.7).
+- Encrypted (record key, section 5): mileage read, categories, description, parts, amount, documents,
+  photos.
 - **Adoption the other way round**: a business records services on a `vehicleId` even when the car's
   owner is not on MyCarBook. The records are there, encrypted, and become readable by the owner when
   they claim the vehicle (section 5.3).
-- **Mileage readings**: a reading lower than an earlier attested one is not refused but **flagged** in
-  the history (odometer roll-back is what buyers fear most).
+- **Mileage readings**: a reading lower than an earlier attested one is not refused but **flagged** by
+  the app when the history is shown (odometer roll-back is what buyers fear most); see section 4.7.
 - Corrections: a record is never changed; a correcting record refers to the one it replaces (as
   GasTrace's planned "Correct" and Supplier's `supersedes`).
 
@@ -150,7 +158,7 @@ service authorization replace it.
 - Every upload signed by the account (content fingerprint, single-use nonce, domain, network), strict
   schema, type checked by its bytes: the V2 fixes, reused.
 
-### 4.6 What the chain reveals
+### 4.6 What the chain reveals (after the decisions of 18 November 2026)
 
 Even with everything encrypted, public metadata says something. It must be listed in the privacy
 policy and in "How it works":
@@ -159,11 +167,29 @@ policy and in "How it works":
 - which business recorded something on it, and its role (a workshop's customer base is visible as a
   list of opaque identifiers and dates);
 - which account holds a vehicle token (the account may carry a name and picture);
-- categories and mileage, if kept public (open point).
+- not the mileage, not the categories (both encrypted; on-chain only a commitment, section 4.7).
 
 Mitigations to evaluate: an owner may hold vehicles in an address separate from their main profile;
-categories and mileage only encrypted; batching. As in GasTrace §4.5, they are documented first and
-implemented if needed.
+batching. As in GasTrace §4.5, they are documented first and implemented if needed.
+
+### 4.7 Mileage commitments (decision of 18 November 2026)
+
+Mileage and categories are encrypted, but the mileage must stay checkable: it is the anti-fraud value
+of the history.
+
+- Each entry and record carries on-chain `keccak256(km, salt)`, where `salt` is a random value kept
+  with the encrypted content. Nobody can read the mileage from the chain (a random salt makes guessing
+  useless).
+- Whoever receives the history (the owner, a buyer or appraiser through a share) gets `km` and `salt`
+  with the content and checks that the mileage shown is exactly the one committed that day, by that
+  business, in that transaction: it cannot be changed afterwards, not even by the business.
+- The **roll-back check** is done by the app when the history is shown, with all values in clear and
+  all commitments verified: a reading lower than an earlier attested one is flagged, with the dates and
+  businesses involved.
+- Categories: encrypted, no commitment needed (they are part of the content's fingerprint). What kind
+  of work a car had (e.g. bodywork after an accident) is for the owner to decide whether to show.
+- Aggregate statistics (for businesses, for selling the product) are computed by the service from data
+  shared with it, never read from the chain.
 
 ## 5. Encryption and sharing
 
@@ -193,10 +219,19 @@ single-use share keys).
 ### 5.3 Claiming a vehicle
 
 When an owner registers a vehicle (or receives it), the platform finds the records already made on its
-`vehicleId`. The businesses' apps hand over the record keys, wrapped for the vehicle key: automatically
-for future records once the vehicle is claimed, and for past records with a rule chosen by each business
-(automatic, or on confirmation). How a business confirms the owner is really the owner (the registration
-document, the car in the workshop) is an open point.
+`vehicleId`. The risk: a stranger who knows a VIN registers the car and reads its whole history. Rule
+(decision of 18 November 2026):
+
+- **future records**: their keys are handed over automatically to the holder of the **verified**
+  vehicle token (section 4.2);
+- **past records**: handed over only when one of these holds:
+  - the vehicle token was issued by a verified business (e.g. the dealer that sold the car);
+  - the business that made the record confirms it from its panel (it has the car in front of it, or
+    sees the registration document);
+  - the private owner showed the registration document to ChainIntegrate (the same check as the
+    arbiter's, section 4.2);
+- otherwise the owner sees that records exist ("3 records at 2 businesses", with dates), not their
+  content, and the app explains how to unlock them.
 
 ### 5.4 Sharing
 
@@ -227,9 +262,14 @@ Universal Profile.
   recorded; the platform's notion of "verified" comes from the issuer being a register of the factory.
 - `offerTransfer` / `acceptTransfer`; no `force` push.
 - `updateRecord(tokenId, recordRef)` only by the token's owner; versions kept as events.
-- `logEntry(tokenId, entryRef, categories, …)` only by the token's owner.
-- `markSuperseded(tokenId, byTokenId)` for the precedence rule (section 4.2): who may call it is an open
-  point (a verified issuer's token, or ChainIntegrate after a dispute).
+- `logEntry(tokenId, entryRef, kmCommitment)` only by the token's owner.
+- **Precedence** (section 4.2): minting a token whose issuer is a register of the factory on a
+  `vehicleId` with private tokens marks them "superseded" in the same transaction; a second verified
+  token on the same `vehicleId` is minted "in conflict".
+- **Arbiter key** (set by the contract owner, replaceable, separate from ChainIntegrate's Universal
+  Profile): `markSuperseded(tokenId, reason)`, `restore(tokenId, reason)`, `resolveConflict(…)`. Its
+  only power: the status of a token, with an event for every decision. No access to data, no transfer,
+  no change of records.
 - No `setDataForTokenId` for the contract owner on vehicle records; `renounceOwnership` disabled.
 
 ### 6.2 `ServiceRegistryFactory`
@@ -252,8 +292,9 @@ Universal Profile.
   built in).
 - Optionally `issueVehicle(…)` for dealers and manufacturers, which mints in `VehicleRegistry` with the
   register as issuer.
-- Inputs checked: categories limited to defined bits, mileage bounded, dates not in the future beyond a
-  tolerance.
+- Inputs checked on-chain: dates not in the future beyond a tolerance, a non-empty commitment and
+  content reference. Mileage bounds and category bits are encrypted, so they are checked by the apps and
+  by the backend's schema before encryption.
 
 ### 6.4 What the contracts do not do
 
@@ -340,10 +381,10 @@ GasTrace-style app (option 4); buyers open share links in any browser.
 
 ## 11. Open points
 
-1. Categories and mileage public or encrypted? Public helps aggregate statistics and the roll-back
-   check, encrypted protects better (section 4.6).
-2. How a business checks that whoever claims a vehicle is its owner before handing over past records.
-3. Who may mark a private vehicle token as superseded, and the dispute procedure.
+1. ~~Categories and mileage public or encrypted~~: decided, section 4.7.
+2. ~~Handing over past records at a claim~~: decided, section 5.3.
+3. ~~Superseding private tokens~~: decided, section 4.2; the written dispute procedure (documents asked,
+   times, how the decision is communicated) is still to draft.
 4. PDFs: accept only images (cleaned) and convert PDFs in the app, or clean them on the server.
 5. The no-app option on the phone (section 8.1, option 2): postponed; prototype before deciding.
 6. Business API: format and authentication, and which management software first.
@@ -351,7 +392,7 @@ GasTrace-style app (option 4); buyers open share links in any browser.
    logbook, suspension).
 8. Which sector first: owners, a workshop, a dealer with its workshop, a fleet. The design must not
    depend on the answer; the first pilot does.
-9. The vehicle registry's `vehicleId` precedence when two verified businesses disagree.
+9. ~~Two verified businesses on the same `vehicleId`~~: decided, section 4.2 ("in conflict").
 
 ## 12. Decisions
 
@@ -369,3 +410,6 @@ GasTrace-style app (option 4); buyers open share links in any browser.
 | 18 Nov 2026 | Content encrypted and shown only with the owner's consent (section 5) |
 | 18 Nov 2026 | Professional records as non-transferable tokens in the business's register (section 4.4) |
 | 18 Nov 2026 | Phone: the ChainIntegrate Account app for the general public, in its own track; no-app option postponed (section 8.1) |
+| 18 Nov 2026 | Mileage and categories encrypted; on-chain only a mileage commitment; roll-back flagged by the app (section 4.7) |
+| 18 Nov 2026 | Precedence: verified tokens supersede private ones automatically; ChainIntegrate arbiter key for disputes; two verified tokens marked "in conflict" (section 4.2) |
+| 18 Nov 2026 | Claims: future records to the verified holder; past records only with a verified token, the business's confirmation or the registration document shown to ChainIntegrate (section 5.3) |
