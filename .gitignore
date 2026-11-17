@@ -151,3 +151,6 @@ backend/allowed-addresses.json
 
 # Backend: registro dei pin (sul VPS)
 backend/data/
+
+# Hardhat local deployments
+deployments/hardhat.json

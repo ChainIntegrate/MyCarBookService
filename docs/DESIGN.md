@@ -296,7 +296,33 @@ Universal Profile.
   content reference. Mileage bounds and category bits are encrypted, so they are checked by the apps and
   by the backend's schema before encryption.
 
-### 6.4 What the contracts do not do
+### 6.4 Implementation (18 November 2026)
+
+First version in `contracts/service/`, tests in `test/contracts/service.test.js` (`npm test`, 30 tests,
+each requirement with a test that tries to get round it):
+
+- `ServiceRegistryFactory`: `createRegistry(salt, owner, role, name, symbol)`, `setSuspended`,
+  `isActive`, `roleOf`, `suspendedSince`, `setVehicleRegistry` (once), `renounceOwnership` disabled.
+- `ServiceRegistry` (22.9 KB of the 24 KB limit): `recordService`, `shareRecordKey` (record key wrapped
+  for the vehicle's holder), `issueVehicle` (dealers and manufacturers), `cancelNonce` /
+  `cancelNonceSigned`; owner operations signed by an **administrator** key (LSP6 ADDCONTROLLER and
+  EDITPERMISSIONS read from the owner's account), or direct; signatures valid at most 7 days; records not
+  transferable; LSP4 token type NFT, token IDs unique-id (the record id chosen by the signer).
+- `VehicleRegistry`: `mint` (open), `issueVerified` (registers only), `statusOf` computed (no loop over
+  private tokens, so many private tokens cannot block a verified issuance), `updateRecord`, `logEntry`,
+  `offerTransfer` / `acceptTransfer` / `cancelTransferOffer`, arbiter `arbitrate` and
+  `setVerifiedToken`; `setDataForTokenId` and `renounceOwnership` disabled; LSP4 token type NFT, token IDs
+  numbers.
+- Compiled with solc 0.8.28 from npm (offline, as GasTrace). Not audited yet.
+
+**Deployment** (`scripts/deploy-service.js`, OPERATIONS.md §6): from the server with a new local key,
+which then hands ownership to ChainIntegrate's Universal Profile. Universal Everything shows as creator
+the addresses in the asset's `LSP4Creators[]` (written by the script: ChainIntegrate's Universal
+Profile), not the deployer; the creator shows as verified once ChainIntegrate's Universal Profile lists
+the asset in its `LSP12IssuedAssets[]`. Each business register can name its business the same way, from
+the business's account.
+
+### 6.5 What the contracts do not do
 
 - No payment, no membership, no tier: prices and plans are on the platform.
 - No VIN, plate or personal data in any form.
