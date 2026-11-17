@@ -1,6 +1,6 @@
 # Design — MyCarBook Service
 
-Status: **draft, before any code** (17 November 2026). It records the decisions taken so far and the
+Status: **draft, before any code** (17 November 2026; decisions confirmed on 18 November 2026). It records the decisions taken so far and the
 points still open. The current product, **MyCarBook V2** (live on LUKSO mainnet), is described in the
 [README](../README.md) and its audit in [AUDIT.md](AUDIT.md); this document is about the next version.
 
@@ -304,10 +304,13 @@ Starting from MyCarBook V2's backend (already hardened) and GasTrace's relayer.
    operator, VIN scanning, offline queue). Staff do not need an account of their own: their phone's key
    is an operator of the business's register, authorized by the owner.
 
-Proposal: design the web app mobile-first and the signing layer pluggable (extension, phone app,
-WalletConnect, possibly the no-app option), so that the clients can come in any order. Start with the
-website on the phone for owners and buyers, the GasTrace-style app for workshops, and follow the
-ChainIntegrate Account app's track for the general public.
+Decision (18 November 2026): the phone app for the general public is the **ChainIntegrate Account
+app** (option 1), a simpler and less crypto-flavoured UP wallet than Cross_Chain's, built in its own
+track (separate repository work and conversation), on up-onboarding's shared code. The no-app option
+(option 2) is postponed: it needs more work and a prototype. Here: the web app is designed
+mobile-first and its signing layer pluggable (extension, ChainIntegrate Account app, WalletConnect,
+later possibly the no-app option), so that the clients can come in any order; workshops use a
+GasTrace-style app (option 4); buyers open share links in any browser.
 
 ## 9. Privacy and compliance
 
@@ -342,7 +345,7 @@ ChainIntegrate Account app's track for the general public.
 2. How a business checks that whoever claims a vehicle is its owner before handing over past records.
 3. Who may mark a private vehicle token as superseded, and the dispute procedure.
 4. PDFs: accept only images (cleaned) and convert PDFs in the app, or clean them on the server.
-5. The no-app option on the phone (section 8.1, option 2): prototype before deciding.
+5. The no-app option on the phone (section 8.1, option 2): postponed; prototype before deciding.
 6. Business API: format and authentication, and which management software first.
 7. Legal: roles, DPIA, erasure through key destruction, terms of service (personal use of the free
    logbook, suspension).
@@ -362,7 +365,7 @@ ChainIntegrate Account app's track for the general public.
 | 17 Nov 2026 | Open contracts: the value is the platform (files on ChainIntegrate's node, identifiers, attestations) |
 | 17 Nov 2026 | Usable from a phone |
 | 17 Nov 2026 | One repository for both sides (personal and business) |
-
-Proposed in this draft, to confirm: opaque `vehicleId` computed by the service (section 4.1); content
-encrypted and shown with the owner's consent (section 5); professional records as non-transferable
-tokens in the business's register (section 4.4).
+| 18 Nov 2026 | Opaque `vehicleId` computed by the service; the VIN never on-chain, not even hashed (section 4.1) |
+| 18 Nov 2026 | Content encrypted and shown only with the owner's consent (section 5) |
+| 18 Nov 2026 | Professional records as non-transferable tokens in the business's register (section 4.4) |
+| 18 Nov 2026 | Phone: the ChainIntegrate Account app for the general public, in its own track; no-app option postponed (section 8.1) |
